@@ -26,8 +26,8 @@ An auditable record of the ordered rules and evidence that produced a result. A 
 
 These dimensions must remain distinct:
 
-- **ObservationStatus:** observed, not-observed, failed, timed-out, inaccessible, or unknown.
-- **Confidence:** how strongly the evidence supports a specific interpretation. Confidence must not be used to average contradictory safety claims.
+- **ObservationStatus:** observed, not-observed, confirmed-absent, failed, timed-out, inaccessible, or unknown. `NOT_OBSERVED` means no observation or marker was found; `CONFIRMED_ABSENT` means an active check established absence.
+- **Confidence:** how strongly the evidence supports a specific interpretation. A generic `EvidenceRequirement` may declare a minimum confidence; `LOW` must not silently satisfy a stronger requirement. Confidence must not be used to average contradictory safety claims.
 - **Provenance:** the likely generator or ecosystem, such as Python, pytest, npm, Next.js, or Git.
 - **RegenerabilityState:** a reproducibility property/evidence dimension describing whether and under what conditions an artifact can be recreated. It is not a risk label and does not by itself authorize any action.
 - **RegenerationCost:** an estimate of time, network, credentials, compute, storage, or lost local state required to recreate it.
@@ -54,6 +54,10 @@ Risk labels are not current activity. A confirmed reference or active consumer i
 `NEVER_DELETE` is protection semantics, not reclaim eligibility. In particular, Git metadata is observed for context and protection and is excluded from the cleanup-candidate pipeline.
 
 ## Evidence semantics
+
+`NOT_OBSERVED` is not a confirmed negative. It represents absence of an observation and remains uncertain. It cannot carry directional negative polarity. `CONFIRMED_ABSENT` is reserved for an actively checked absence and must carry explicit negative polarity.
+
+`EvidenceRequirement` expresses a detector-neutral evidence key and minimum confidence without defining detector-specific rules. Policy evaluation must fail closed when a requirement is missing or its minimum confidence is not met.
 
 The model must distinguish:
 

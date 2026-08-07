@@ -27,6 +27,8 @@ The system must prove that an artifact meets the requirements for a low-risk lab
 
 Artifact names, verified regenerability, and low staleness are not sufficient by themselves to produce a `RiskLabel`. Runtime uncertainty defaults to `REVIEW_REQUIRED`.
 
+Evidence requirements must make minimum confidence explicit. `LOW` confidence does not silently qualify as strong safety evidence, and `NOT_OBSERVED` does not qualify as confirmed negative evidence.
+
 ## Separation of concerns
 
 The following questions must not be collapsed into one field:
