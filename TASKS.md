@@ -10,20 +10,23 @@ reports are implemented and covered by synthetic/tempdir tests.
 
 There is still no disk-wide discovery, UI, MCP adapter, LLM integration,
 cleanup execution, or dynamic plugin system. Git is currently represented only
-as a scanner boundary; a structured Git protection/context adapter is not yet
-implemented. Cleanup planning, revalidation, execution authorization,
+as a structured scanner protection/context observation and is not a cleanup
+candidate. Cleanup planning, revalidation, execution authorization,
 Trash/Quarantine, journaling, and Undo are future roadmap capabilities.
 
 ## Next task — exactly one
 
-- [ ] Add a bounded structured Git protection/context observation adapter for `.git` directories and `.git` files.
+- [ ] Define the bounded v0.2 System Intelligence discovery contract for approved global developer-storage locations.
 
 ### Acceptance criteria
 
-- Inspect only one explicitly supplied `.git` directory or `.git` file.
-- Produce an immutable `ObservedNode` protection/context result, never a `CleanupCandidate`.
-- Preserve `NEVER_DELETE` as protection semantics, not reclaim eligibility.
-- Record missing, failed, symlinked, and ambiguous observations conservatively.
-- Do not implement repository history analysis, reachability graphs, cleanup, or new dependencies.
+- Specify approved Windows global locations, boundary ownership, and candidate
+  categories without implementing whole-system traversal.
+- Preserve observations → evidence → interpretation → Safety Policy and all
+  existing fail-closed invariants.
+- Keep Git metadata as protection/context only and keep machine-readable
+  identifiers stable.
+- Do not implement whole-system scanning, cleanup, Desktop, MCP, i18n runtime,
+  or new dependencies.
 
 Future work is described in [docs/ROADMAP.md](docs/ROADMAP.md), but it is not authorized by this task list.

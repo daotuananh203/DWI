@@ -51,7 +51,7 @@ The first implementation should use simple typed Python modules. It must not beg
 - **Size accounting:** recursively counts regular files inside an identified candidate without following links; incomplete counts and failures remain explicit and size never changes `RiskLabel`.
 - **Evidence collection:** normalizes observations into structured evidence with provenance and status.
 - **Candidate selection:** prevents arbitrary files, source trees, and project roots from entering the cleanup-analysis path.
-- **Git boundary:** observes `.git` directories and `.git` files for protection/context, but excludes them from `CleanupCandidate` inputs. `NEVER_DELETE` is a protection outcome, not reclaim eligibility.
+- **Git boundary:** observes exactly one explicit `.git` directory or `.git` file for structured protection/context, records failures and raw gitdir references, never follows external targets, and excludes Git metadata from `CleanupCandidate` inputs. `NEVER_DELETE` is a protection outcome, not reclaim eligibility.
 - **Artifact analysis:** interprets evidence for Python, Node.js, and minimal Git context.
 
 The current bounded artifact layer has explicit analyzers for `__pycache__`,
@@ -78,6 +78,9 @@ finding with effective `REVIEW_REQUIRED` posture; it is not promoted to a
 cleanup candidate or silently passed to policy. Accepted results preserve raw
 evidence and interpretation, then invoke the existing Safety Policy. `.git`
 directories and `.git` files are recorded as protected context only.
+The structured `GitContextObservation` preserves the observed node, evidence,
+object form, and any un-followed `gitdir` reference. It never enters artifact
+dispatch or candidate selection.
 
 ## Boundary rules
 

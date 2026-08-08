@@ -37,8 +37,8 @@ Git control metadata is observed only for protection and context. It is not a cl
 
 | Artifact | Identifying evidence | Likely provenance | Regeneration requirement / cost | Reachability and edge cases | Initial evidence posture (not a RiskLabel) |
 |---|---|---|---|---|---|
-| `.git` directory | Git control files such as `HEAD`, `objects`, `refs`, or `config` | Git repository | Not a disposable cache; recovery may require a remote or may be impossible | Observe for repository protection/context; inspect worktrees, alternates, submodules, and permissions | `ObservedNode` only; never a `CleanupCandidate`. `NEVER_DELETE` is protection semantics, not reclaim eligibility |
-| `.git` file | File containing a `gitdir:` reference, common for worktrees/submodules | Git worktree or submodule | Not a disposable cache | Observe the reference for protection/context; broken or inaccessible references remain protected/uncertain | `ObservedNode` only; never a `CleanupCandidate`. `NEVER_DELETE` is protection semantics, not reclaim eligibility |
+| `.git` directory | Git control files such as `HEAD`, `objects`, `refs`, or `config` | Git repository | Not a disposable cache; recovery may require a remote or may be impossible | Observe only the bounded direct-root control layout; repository history, worktrees, alternates, submodules, and permissions are not analyzed | `ObservedNode` only; never a `CleanupCandidate`. `NEVER_DELETE` is protection semantics, not reclaim eligibility |
+| `.git` file | File containing a `gitdir:` reference, common for worktrees/submodules | Git worktree or submodule | Not a disposable cache | Record one bounded `gitdir:` reference without opening or traversing its target; broken or inaccessible references remain protected/uncertain | `ObservedNode` only; never a `CleanupCandidate`. `NEVER_DELETE` is protection semantics, not reclaim eligibility |
 
 ## Evidence requirements shared by all artifacts
 
@@ -103,3 +103,17 @@ not `CleanupCandidate` inputs. The scanner records their paths but does not
 assign a reclaim conclusion to them. Rejected candidate-selection results are
 reported with an effective `REVIEW_REQUIRED` posture and retain their raw
 evidence; they do not receive a Safety Policy decision until admitted.
+
+## Structured Git context observation
+
+The bounded Git adapter accepts exactly one explicit `.git` path. A normal
+`.git` directory is inspected only at its direct root for the required control
+layout (`HEAD`, `config`, `objects`, and `refs`); repository history and object
+graphs are never traversed. A `.git` file is parsed for one `gitdir:` reference,
+but its target is recorded and never opened or traversed. External, missing,
+malformed, unreadable, symlinked, and reparse-point cases remain protected and
+ambiguous/failed rather than being guessed.
+
+The scanner stores structured `GitContextObservation` results while retaining
+the derived protected-path view for compatibility. Git observations are never
+sent to the artifact dispatcher or admitted as cleanup candidates.

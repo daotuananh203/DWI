@@ -87,6 +87,7 @@ from .pipeline import CandidateEligibility, CandidateSelection, Finding, evaluat
 from .size import SizeObservation, collect_size
 from .scanner import WorkspaceScan, WorkspaceScanError, WorkspaceSummary, scan_workspace
 from .report import finding_to_dict, json_report, scan_to_dict, table_report
+from .git_context import GitContextObservation, GitObjectForm, observe_git_path
 
 __all__ = [
     "ActionEligibility",
@@ -179,4 +180,7 @@ __all__ = [
     "finding_to_dict",
     "scan_to_dict",
     "table_report",
+    "GitContextObservation",
+    "GitObjectForm",
+    "observe_git_path",
 ]

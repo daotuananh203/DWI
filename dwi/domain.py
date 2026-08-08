@@ -1,7 +1,8 @@
 """Immutable domain vocabulary and evidence schema for DWI.
 
 This module contains no filesystem access. Paths are represented as synthetic or
-observed identifiers; scanning and detection are intentionally out of scope.
+observed identifiers; filesystem scanning and artifact detection live in separate
+bounded layers.
 """
 
 from __future__ import annotations

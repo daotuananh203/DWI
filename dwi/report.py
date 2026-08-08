@@ -56,6 +56,7 @@ def scan_to_dict(scan: WorkspaceScan) -> dict[str, Any]:
         "observation_failures": list(scan.observation_failures),
         "ambiguous_paths": list(scan.ambiguous_paths),
         "protected_git_paths": list(scan.protected_git_paths),
+        "git_observations": [_json_value(observation) for observation in scan.git_observations],
     }
     result["summary"] = _json_value(scan.summary)
     return result

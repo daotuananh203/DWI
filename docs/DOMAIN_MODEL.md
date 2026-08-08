@@ -8,6 +8,14 @@ This document defines the vocabulary that future implementation tasks must refin
 
 A filesystem object inspected for context. It may be a file, directory, link, junction, reparse point, or an inaccessible path. An `ObservedNode` is not automatically eligible for cleanup analysis.
 
+### GitContextObservation
+
+An immutable protection/context result for exactly one explicit `.git` path.
+It contains an `ObservedNode`, structured raw observations, the recognized
+object form, and an optional raw `gitdir` reference. A referenced gitdir target
+is recorded but never followed by this bounded adapter. The result is never a
+`CleanupCandidate`.
+
 ### CleanupCandidate
 
 An artifact that has passed an explicit candidate-selection boundary and may be evaluated by safety policy. Candidate status must be based on artifact evidence, not merely a matching directory name.
@@ -67,6 +75,9 @@ These dimensions must remain distinct:
 - **CleanupPlan:** immutable engine-generated proposed action set, never an arbitrary path list supplied by an interface.
 - **PlanValidation:** immediate deterministic revalidation of a plan against current filesystem/evidence.
 - **ExecutionAuthorization:** final permission state after policy and plan validation; it is not implied by a risk label or action eligibility.
+- **GitObjectForm:** whether the explicit `.git` path was a valid directory,
+  valid gitdir-reference file, missing, inaccessible, or ambiguous. It is
+  protection/context evidence, not a reclaim conclusion.
 
 ## Risk labels
 

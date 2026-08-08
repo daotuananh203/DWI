@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .domain import RiskLabel
 from .dispatcher import analyze_candidate
+from .git_context import GitContextObservation, observe_git_path
 from .pipeline import Finding, evaluate_analysis
 from .size import collect_size
 
@@ -39,7 +40,12 @@ class WorkspaceScan:
     findings: tuple[Finding, ...]
     observation_failures: tuple[str, ...] = ()
     ambiguous_paths: tuple[str, ...] = ()
-    protected_git_paths: tuple[str, ...] = ()
+    git_observations: tuple[GitContextObservation, ...] = ()
+
+    @property
+    def protected_git_paths(self) -> tuple[str, ...]:
+        """Backward-compatible path view of structured Git observations."""
+        return tuple(sorted(observation.node.path for observation in self.git_observations))
 
     @property
     def summary(self) -> WorkspaceSummary:
@@ -89,7 +95,7 @@ def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
     findings: list[Finding] = []
     failures: list[str] = []
     ambiguous: list[str] = []
-    protected: list[str] = []
+    git_observations: list[GitContextObservation] = []
     seen: set[tuple[int, int]] = set()
     stack = [root_path]
     while stack:
@@ -109,12 +115,12 @@ def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
             child = Path(entry.path)
             name = entry.name
             try:
+                if name == ".git":
+                    git_observations.append(observe_git_path(child))
+                    continue
                 child_metadata = entry.stat(follow_symlinks=False)
                 if entry.is_symlink() or _is_reparse(child_metadata):
                     ambiguous.append(str(child))
-                    continue
-                if name == ".git":
-                    protected.append(str(child))
                     continue
                 if name in _SUPPORTED_NAMES and entry.is_dir(follow_symlinks=False):
                     result = analyze_candidate(child)
@@ -131,5 +137,5 @@ def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
         findings=tuple(findings),
         observation_failures=tuple(sorted(failures)),
         ambiguous_paths=tuple(sorted(ambiguous)),
-        protected_git_paths=tuple(sorted(protected)),
+        git_observations=tuple(sorted(git_observations, key=lambda item: (item.node.path.casefold(), item.node.path))),
     )
