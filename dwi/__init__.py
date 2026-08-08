@@ -86,8 +86,32 @@ from .dispatcher import AnalysisResult, analyze_candidate, dispatch_analysis
 from .pipeline import CandidateEligibility, CandidateSelection, Finding, evaluate_analysis, select_candidate
 from .size import SizeObservation, collect_size
 from .scanner import WorkspaceScan, WorkspaceScanError, WorkspaceSummary, scan_workspace
-from .report import finding_to_dict, json_report, scan_to_dict, table_report
+from .report import (
+    finding_to_dict,
+    json_report,
+    json_system_report,
+    scan_to_dict,
+    system_to_dict,
+    table_report,
+    table_system_report,
+)
 from .git_context import GitContextObservation, GitObjectForm, observe_git_path
+from .global_storage import GlobalStorageDetection, GlobalStorageInterpretation, inspect_global_storage, interpret_global_storage
+from .scan_control import ScanBudget, ScanLimits, ScanTermination
+from .system_scan import (
+    RootBoundary,
+    RootObservation,
+    RootRequest,
+    RootScope,
+    RootStatus,
+    SystemScan,
+    SystemScanError,
+    SystemScanOptions,
+    SystemSummary,
+    approved_global_storage_roots,
+    classify_root,
+    scan_system,
+)
 
 __all__ = [
     "ActionEligibility",
@@ -180,7 +204,29 @@ __all__ = [
     "finding_to_dict",
     "scan_to_dict",
     "table_report",
+    "json_system_report",
+    "system_to_dict",
+    "table_system_report",
     "GitContextObservation",
     "GitObjectForm",
     "observe_git_path",
+    "GlobalStorageDetection",
+    "GlobalStorageInterpretation",
+    "inspect_global_storage",
+    "interpret_global_storage",
+    "ScanBudget",
+    "ScanLimits",
+    "ScanTermination",
+    "RootBoundary",
+    "RootObservation",
+    "RootRequest",
+    "RootScope",
+    "RootStatus",
+    "SystemScan",
+    "SystemScanError",
+    "SystemScanOptions",
+    "SystemSummary",
+    "approved_global_storage_roots",
+    "classify_root",
+    "scan_system",
 ]

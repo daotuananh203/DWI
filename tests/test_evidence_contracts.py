@@ -20,7 +20,7 @@ class EvidenceContractTests(unittest.TestCase):
     def test_contracts_cover_initial_python_and_node_artifacts(self) -> None:
         contracts = all_contracts()
         self.assertEqual({contract.artifact for contract in contracts}, set(ArtifactKind))
-        self.assertEqual(len(contracts), 9)
+        self.assertEqual(len(contracts), len(ArtifactKind))
         raw_common_keys = {
             "path_object_observation",
             "metadata_readability_observation",
@@ -45,7 +45,7 @@ class EvidenceContractTests(unittest.TestCase):
 
     def test_normal_fixtures_satisfy_contracts_without_assigning_risk(self) -> None:
         fixtures = [fixture for fixture in initial_artifact_fixtures() if not fixture.adversarial]
-        self.assertEqual(len(fixtures), 10)
+        self.assertEqual(len(fixtures), len(ArtifactKind) + 1)
         for fixture in fixtures:
             assessment = fixture.assess_contract()
             self.assertTrue(assessment.evidence_sufficient, fixture.fixture_id)

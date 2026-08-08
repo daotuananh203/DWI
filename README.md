@@ -23,22 +23,37 @@ auditable journals, Undo/recovery, Desktop, CLI, and MCP interfaces over one
 shared engine.
 
 The typed domain model, detector-neutral evidence contracts, bounded artifact
-analyzers, explicit dispatcher, workspace scanner, size accounting, and
-standard-library CLI/report adapters are implemented. The MVP remains
-analysis-and-reporting-only and is the v0.1 Workspace Intelligence milestone.
-It does not scan the whole system, delete files, create cleanup plans, call an
-LLM, expose MCP, access a cloud service, or provide a UI.
+analyzers, explicit dispatcher, workspace scanner, structured Git context,
+bounded System Intelligence discovery, size accounting, and standard-library
+CLI/report adapters are implemented. The current internal milestone is v0.2
+System Intelligence and remains analysis-and-reporting-only. It does not delete
+files, create cleanup plans, call an LLM, expose MCP, access a cloud service, or
+provide a UI.
 
 Run a bounded report from one explicit workspace root:
 
 ```text
 python -m dwi scan PATH
 python -m dwi scan PATH --json
+python -m dwi scan-system --root PATH --allow-network
+python -m dwi scan-system --json
 ```
 
 The scanner recognizes only the documented artifact names, does not follow
 links or reparse points, excludes `.git` from cleanup candidates, and reports
 unknown or incomplete observations conservatively.
+
+`scan-system` applies the Scan Safety Gate: local fixed drives and approved
+local roots are allowed, UNC/network roots are denied by default, links and
+reparse points are never followed, and limits or cancellation produce
+deterministic partial results. Use `--allow-network` only for an explicit
+opt-in; network scanning is never the default.
+
+DWI is offline-first and read-only. It performs no telemetry, automatic
+diagnostic upload, HTTP, cloud, or API communication. Network filesystem access
+is denied by default; explicit `--allow-network` may perform filesystem I/O on
+approved UNC, mapped, or other network-backed roots. Reports containing paths
+remain local to the machine.
 
 Read the documents in this order:
 
@@ -80,4 +95,4 @@ localization. Machine-readable contracts remain stable and language-neutral:
 JSON keys, enums, `RiskLabel` values, MCP tool names, API/schema identifiers,
 and internal evidence keys do not change by language. Future public
 documentation will provide `README.md` in English and `README.vi.md` in
-Vietnamese. Runtime i18n is not implemented in v0.1.
+Vietnamese. Runtime i18n is not implemented in v0.2.

@@ -31,6 +31,26 @@ This is a specification of candidate evidence, not an implementation or a promis
 | `.next` | Next.js build/cache markers and project metadata | Next.js | Recreated by the Next.js build/dev workflow; cost varies | Check whether it is used by a running process or deployment workflow | Reproducibility evidence only; active or referenced => minimum `REVIEW_REQUIRED` |
 | npm/pnpm/yarn cache | Tool-specific cache layout and metadata | npm, pnpm, or yarn | Usually refetched; network, registry, and disk costs apply | May be shared by many projects; cache corruption or offline use matters | Shared-cache evidence required; uncertainty => `REVIEW_REQUIRED` |
 
+## Bounded global storage observations
+
+The v0.2 system analyzer accepts only explicitly approved global storage roots.
+It does not classify arbitrary large directories as caches and does not infer
+ownership from a path name alone. Each detector inspects only bounded local
+structure and returns raw evidence plus a separate interpretation.
+
+| Artifact | Bounded structural evidence | Initial interpretation boundary |
+|---|---|---|
+| pip cache | Known `http-v2`/`http`, `wheels`, and `selfcheck` layout combinations | Valid structure may support conditional reproducibility; recreation cost and runtime/reference context remain unknown |
+| uv cache | Multiple versioned cache directories such as `archive-v*`, `wheels-v*`, `simple-v*`, or `interpreter-v*` | Versioned local structure is required; names alone are insufficient and cost remains unknown |
+| npm cache | `content-v2` and `index-v5`, directly or under `_cacache` | Both content and index structure are required; shared consumers remain unknown |
+| pnpm store | Versioned store containing bounded `files` and `index` directories | A versioned files/index pair is required; cross-project reachability is not inspected |
+| yarn cache | Bounded package entry containing `.yarn-metadata.json` | Package metadata is required; cache ownership and runtime use remain unknown |
+
+Malformed, weak, inaccessible, linked, reparse, or name-only global-storage
+paths fail closed and cannot establish strong provenance. Global cache
+regeneration cost remains `UNKNOWN` unless future bounded evidence proves a
+cost band.
+
 ## Git protection and context
 
 Git control metadata is observed only for protection and context. It is not a cleanup artifact. `.git` directories and `.git` files remain `ObservedNode`s and are excluded from `CleanupCandidate` selection; `NEVER_DELETE` is protection semantics, not reclaim eligibility.

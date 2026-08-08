@@ -19,12 +19,22 @@ scanning, cleanup planning, execution, Trash/Quarantine, Undo, Desktop, or MCP.
 
 ## v0.2 — System Intelligence
 
-- Whole-system developer-storage discovery.
-- Global caches and tool storage.
-- Windows hardening.
-- More ecosystems.
+- Bounded developer-storage discovery across approved local fixed drives,
+  profile locations, explicit local roots, and known tool-specific caches.
+- Scan Safety Gate with network default deny, no link/reparse traversal,
+  deterministic cancellation, traversal limits, and partial results.
+- Global pip, uv, npm, pnpm, and yarn cache analysis where local structure is
+  defensible.
+- `scan-system` CLI and JSON reporting over the existing safety engine.
+- Offline-first, read-only behavior with no telemetry, automatic upload,
+  HTTP, cloud, or API communication. Network filesystem access remains denied
+  by default and requires explicit opt-in.
 
 This remains an internal milestone; it is not a public release.
+
+The v0.2 implementation remains intentionally bounded. It does not perform
+cleanup, project-wide reachability, process-wide activity analysis, background
+service work, or network discovery by default.
 
 ## v0.3 — Safe Cleanup
 

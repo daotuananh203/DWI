@@ -22,8 +22,9 @@ RiskLabel
   -> Journal/Undo
 ```
 
-This is a product direction and domain boundary. Only the v0.1 analysis and
-reporting slice is implemented today.
+This is a product direction and domain boundary. The v0.1 workspace analysis
+slice and the v0.2 bounded System Intelligence/reporting slice are implemented
+today; cleanup remains future work.
 
 ## Problem
 
@@ -49,11 +50,15 @@ The MVP is deliberately narrow:
 - CLI/reporting interface only.
 - Python and Node.js artifact analysis.
 - Minimal Git awareness for protection and context, including `.git` directories and `.git` files.
+- Bounded System Intelligence discovery for approved local roots and
+  tool-specific global developer caches.
+- Scan Safety Gate with network default deny, no link/reparse traversal,
+  deterministic cancellation, limits, and partial-result reporting.
 - Deterministic findings with structured evidence and explanations.
 - Four risk labels: `SAFE`, `REGENERATABLE`, `REVIEW_REQUIRED`, and `NEVER_DELETE`.
 - No file deletion, automatic cleanup, desktop UI, web UI, FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis, Ollama analysis, dynamic plugin discovery, or cloud features.
 
-The v0.1 scope remains analysis-only. Cleanup planning, revalidation,
+The v0.2 scope remains analysis-only and offline-first. Cleanup planning, revalidation,
 execution authorization, Trash/Quarantine, journaling, Undo, Desktop, and MCP
 are roadmap milestones, not current capabilities.
 
@@ -89,6 +94,12 @@ DWI is not a generic disk visualizer, antivirus product, backup system, source-c
 - **Reproducibility is not safety:** `RegenerabilityState` describes whether recreation is possible and under what conditions. `RiskLabel.REGENERATABLE` is a separate Safety Policy conclusion and requires additional gates.
 - **Protection is not candidacy:** `.git` directories and `.git` files are observed for protection/context and are never `CleanupCandidate` inputs. `NEVER_DELETE` describes protection semantics, not reclaim eligibility.
 - **No name-based labels:** artifact names identify evidence to investigate; they do not directly map to `RiskLabel`. Runtime uncertainty defaults to `REVIEW_REQUIRED`.
+- **Scan safety:** system discovery stays within approved roots, denies network
+  boundaries by default, and never treats unvisited paths as absent.
+- **Privacy:** no telemetry, automatic diagnostic upload, HTTP, cloud, or API
+  communication. Network filesystem access is denied by default; an explicit
+  `--allow-network` opt-in may perform filesystem I/O on approved network
+  storage.
 - **Explainability:** every result carries the evidence and rule trace that produced it.
 - **Small increments:** the MVP prefers simple typed Python modules over speculative frameworks.
 

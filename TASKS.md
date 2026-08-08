@@ -2,31 +2,33 @@
 
 ## Current state
 
-The typed domain model, detector-neutral contracts, four Python cache analyzers,
-the bounded `.venv` analyzer, bounded Node.js analyzers for `node_modules`,
-`dist`, `build`, and `.next`, an explicit single-candidate dispatcher, the
-bounded workspace scanner, read-only size accounting, and deterministic CLI
-reports are implemented and covered by synthetic/tempdir tests.
+The v0.1 Workspace Intelligence layer is frozen. The v0.2 System Intelligence
+layer now adds bounded approved-root discovery, a fail-closed Scan Safety Gate,
+shared traversal limits/cancellation, explicit system-scan metadata, and
+detector-neutral global cache analysis for pip, uv, npm, pnpm, and yarn where
+local structure is defensible. All current behavior is covered by
+synthetic/tempdir and mocked-boundary tests.
 
-There is still no disk-wide discovery, UI, MCP adapter, LLM integration,
-cleanup execution, or dynamic plugin system. Git is currently represented only
-as a structured scanner protection/context observation and is not a cleanup
+There is still no cleanup execution, UI, MCP adapter, LLM integration,
+telemetry, cloud/API access, background service, or dynamic plugin system.
+System scanning remains bounded, read-only, offline-first, and developer-storage
+aware. Git remains structured protection/context only and is not a cleanup
 candidate. Cleanup planning, revalidation, execution authorization,
 Trash/Quarantine, journaling, and Undo are future roadmap capabilities.
 
 ## Next task — exactly one
 
-- [ ] Define the bounded v0.2 System Intelligence discovery contract for approved global developer-storage locations.
+- [ ] Define the bounded v0.3 Safe Cleanup planning and immediate revalidation contract.
 
 ### Acceptance criteria
 
-- Specify approved Windows global locations, boundary ownership, and candidate
-  categories without implementing whole-system traversal.
-- Preserve observations → evidence → interpretation → Safety Policy and all
-  existing fail-closed invariants.
-- Keep Git metadata as protection/context only and keep machine-readable
-  identifiers stable.
-- Do not implement whole-system scanning, cleanup, Desktop, MCP, i18n runtime,
-  or new dependencies.
+- Specify immutable engine-generated cleanup plans, plan-item identifiers,
+  immediate filesystem/evidence revalidation, and conservative invalidation.
+- Preserve the existing observations → evidence → interpretation → Safety Policy
+  pipeline and all fail-closed invariants.
+- Keep `SAFE` separate from execution authorization and keep Git metadata as
+  protection/context only.
+- Do not execute cleanup, move/delete files, add Trash/Undo, implement Desktop,
+  MCP, i18n runtime, or add new dependencies.
 
 Future work is described in [docs/ROADMAP.md](docs/ROADMAP.md), but it is not authorized by this task list.

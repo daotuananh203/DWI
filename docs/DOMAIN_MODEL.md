@@ -16,6 +16,23 @@ object form, and an optional raw `gitdir` reference. A referenced gitdir target
 is recorded but never followed by this bounded adapter. The result is never a
 `CleanupCandidate`.
 
+### SystemScan and Scan Safety Gate
+
+`SystemScan` is an immutable read-only result for bounded developer-storage
+discovery. It records requested roots, root dispositions, workspace findings,
+global-storage findings, protected Git observations, failures, ambiguous
+boundaries, size totals, and termination state.
+
+The Scan Safety Gate classifies roots as local fixed drive, local directory,
+UNC, network, mapped, removable, or unknown. Local fixed drives and explicit
+local directories may be approved; UNC, network, mapped, removable, symlink,
+and reparse roots are denied unless an explicit network opt-in applies to a
+network boundary. A denial is recorded, never converted into a guessed scan.
+
+`ScanTermination` distinguishes completed, cancelled, time-limited, node-limited,
+and file-limited results. A partial result remains valid evidence with explicit
+incompleteness; it never implies that unvisited paths are absent or safe.
+
 ### CleanupCandidate
 
 An artifact that has passed an explicit candidate-selection boundary and may be evaluated by safety policy. Candidate status must be based on artifact evidence, not merely a matching directory name.
@@ -78,6 +95,10 @@ These dimensions must remain distinct:
 - **GitObjectForm:** whether the explicit `.git` path was a valid directory,
   valid gitdir-reference file, missing, inaccessible, or ambiguous. It is
   protection/context evidence, not a reclaim conclusion.
+- **RootBoundary / RootStatus:** the safety classification and disposition of
+  an approved, denied, skipped, failed, or partial scan root.
+- **ScanTermination:** whether a bounded scan completed or stopped because of
+  cancellation or an explicit resource limit.
 
 ## Risk labels
 

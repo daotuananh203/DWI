@@ -27,6 +27,11 @@ class ArtifactKind(str, Enum):
     DIST = "dist"
     BUILD = "build"
     NEXT_BUILD = "next_build"
+    PIP_CACHE = "pip_cache"
+    UV_CACHE = "uv_cache"
+    NPM_CACHE = "npm_cache"
+    PNPM_CACHE = "pnpm_cache"
+    YARN_CACHE = "yarn_cache"
 
 
 @dataclass(frozen=True)
@@ -145,6 +150,41 @@ _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
         "build_output_marker",
         "project_configuration_observation",
     ),
+    ArtifactKind.PIP_CACHE: (
+        "global_storage_path_observation",
+        "global_storage_marker_observation",
+        "global_storage_structure_observation",
+    ),
+    ArtifactKind.UV_CACHE: (
+        "global_storage_path_observation",
+        "global_storage_marker_observation",
+        "global_storage_structure_observation",
+    ),
+    ArtifactKind.NPM_CACHE: (
+        "global_storage_path_observation",
+        "global_storage_marker_observation",
+        "global_storage_structure_observation",
+    ),
+    ArtifactKind.PNPM_CACHE: (
+        "global_storage_path_observation",
+        "global_storage_marker_observation",
+        "global_storage_structure_observation",
+    ),
+    ArtifactKind.YARN_CACHE: (
+        "global_storage_path_observation",
+        "global_storage_marker_observation",
+        "global_storage_structure_observation",
+    ),
+}
+
+_PYTHON_ARTIFACTS = {
+    ArtifactKind.PYCACHE,
+    ArtifactKind.PYTEST_CACHE,
+    ArtifactKind.MYPY_CACHE,
+    ArtifactKind.RUFF_CACHE,
+    ArtifactKind.PYTHON_VENV,
+    ArtifactKind.PIP_CACHE,
+    ArtifactKind.UV_CACHE,
 }
 
 
@@ -156,13 +196,7 @@ def _requirements(artifact: ArtifactKind) -> tuple[EvidenceRequirement, ...]:
 _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
     artifact: EvidenceContract(
         artifact=artifact,
-        ecosystem=Ecosystem.PYTHON if artifact in {
-            ArtifactKind.PYCACHE,
-            ArtifactKind.PYTEST_CACHE,
-            ArtifactKind.MYPY_CACHE,
-            ArtifactKind.RUFF_CACHE,
-            ArtifactKind.PYTHON_VENV,
-        } else Ecosystem.NODE,
+        ecosystem=Ecosystem.PYTHON if artifact in _PYTHON_ARTIFACTS else Ecosystem.NODE,
         requirements=_requirements(artifact),
         evidence_notes=(
             "Evidence keys describe observations only; no key maps directly to a domain state or RiskLabel.",
@@ -174,6 +208,7 @@ _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
             "NODE_MODULES uses bounded package-tree and local package-manager marker observations; package-manager-wide reachability is not inspected.",
             "DIST and BUILD require bounded output and build-metadata observations; source inputs outside the candidate are not inspected.",
             "NEXT_BUILD requires bounded Next.js metadata, output, and project-configuration observations; project context outside the candidate is not inspected.",
+            "Global cache contracts require an explicitly approved local storage root and bounded tool-specific structure; path names alone are insufficient.",
             "Confirmed references, uncertainty, or conflicts must fail closed in policy evaluation.",
         ),
     )

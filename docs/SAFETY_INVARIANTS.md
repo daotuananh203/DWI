@@ -21,6 +21,26 @@ These invariants are architectural constraints. Future implementation, tests, CL
 
 17. `.git` directories and `.git` files are `ObservedNode`s for protection/context only and must never enter the `CleanupCandidate` pipeline. `NEVER_DELETE` expresses a protection floor, not reclaim eligibility.
 
+18. The v0.2 Scan Safety Gate allows only approved local fixed drives or
+explicit local roots by default. UNC, network, mapped, removable, symlink, and
+reparse roots are denied or skipped conservatively; network roots require an
+explicit opt-in.
+
+19. System discovery must remain inside approved roots. Before traversing a
+current directory or enumerating an approved global-storage root, the path must
+be revalidated as an ordinary directory. It must not follow symlinks, junctions,
+or reparse points, and inaccessible, out-of-bound, or racing paths must be
+recorded and skipped rather than guessed.
+
+20. Cancellation, time limits, node limits, and file limits produce explicit
+partial scan state. A partial result never treats unvisited paths as absent,
+safe, or reclaimable.
+
+21. System discovery is read-only and offline-first. DWI performs no telemetry,
+diagnostic upload, HTTP, cloud, or API communication. Network filesystem I/O is
+denied by default and only occurs for explicitly opted-in approved network
+roots; it is not a telemetry or cloud communication path.
+
 ## Future cleanup invariants
 
 The following invariants apply when cleanup planning and execution enter the

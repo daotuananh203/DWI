@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .report import json_report, table_report
+from .report import json_report, json_system_report, table_report, table_system_report
 from .scanner import WorkspaceScanError, scan_workspace
+from .scan_control import ScanLimits
+from .system_scan import SystemScanOptions, scan_system
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -15,7 +17,39 @@ def main(argv: list[str] | None = None) -> int:
     scan = commands.add_parser("scan", help="scan one explicit workspace root")
     scan.add_argument("path")
     scan.add_argument("--json", action="store_true", dest="as_json")
+    system = commands.add_parser("scan-system", help="scan approved local developer-storage roots")
+    system.add_argument("--root", action="append", dest="roots", default=[])
+    system.add_argument("--drive")
+    system.add_argument("--allow-network", action="store_true", dest="allow_network")
+    system.add_argument("--max-seconds", type=float, dest="max_seconds")
+    system.add_argument("--max-nodes", type=int, dest="max_nodes")
+    system.add_argument("--max-files", type=int, dest="max_files")
+    system.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
+    if args.command == "scan-system":
+        try:
+            has_explicit_roots = bool(args.roots)
+            option_values = {
+                "additional_roots": tuple(args.roots),
+                "drive": args.drive,
+                "include_fixed_drives": not has_explicit_roots,
+                "include_user_profile": not has_explicit_roots,
+                "include_global_storage": not has_explicit_roots,
+                "allow_network": args.allow_network,
+            }
+            if any(value is not None for value in (args.max_seconds, args.max_nodes, args.max_files)):
+                defaults = SystemScanOptions().limits
+                option_values["limits"] = ScanLimits(
+                    max_seconds=args.max_seconds if args.max_seconds is not None else defaults.max_seconds,
+                    max_nodes=args.max_nodes if args.max_nodes is not None else defaults.max_nodes,
+                    max_files=args.max_files if args.max_files is not None else defaults.max_files,
+                )
+            result = scan_system(SystemScanOptions(**option_values))
+        except (ValueError, OSError) as error:
+            print(f"dwi: system scan could not start: {error}", file=sys.stderr)
+            return 2
+        print(json_system_report(result) if args.as_json else table_system_report(result), end="")
+        return 0
     try:
         result = scan_workspace(args.path)
     except WorkspaceScanError as error:

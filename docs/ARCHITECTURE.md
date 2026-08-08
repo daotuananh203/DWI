@@ -10,8 +10,9 @@ interfaces over the same core. They must never create an alternate safety path.
 
 ## Shared product pipeline
 
-The diagram includes future cleanup stages. v0.1 currently stops after the
-deterministic CLI/JSON report; no cleanup stage is implemented.
+The diagram includes future cleanup stages. v0.2 currently stops after
+deterministic system/workspace CLI and JSON reports; no cleanup stage is
+implemented.
 
 ```text
 Filesystem observations
@@ -48,6 +49,8 @@ The first implementation should use simple typed Python modules. It must not beg
 
 - **Filesystem observation:** reads paths and metadata, records failures explicitly, and does not decide safety.
 - **Workspace discovery:** accepts one explicit ordinary root, visits supported descendants in deterministic order, does not follow symlinks/junctions/reparse points, and stops discovery below an identified candidate.
+- **System discovery:** accepts approved local roots and known tool-specific global cache roots, applies the Scan Safety Gate, records denied/skipped boundaries, and never treats arbitrary large directories as developer storage.
+- **Scan Safety Gate:** allows local fixed drives and explicit local roots, denies UNC/network/mapped roots by default, supports explicit network opt-in, records inaccessible/racing paths, and applies deterministic cancellation/time/node/file limits.
 - **Size accounting:** recursively counts regular files inside an identified candidate without following links; incomplete counts and failures remain explicit and size never changes `RiskLabel`.
 - **Evidence collection:** normalizes observations into structured evidence with provenance and status.
 - **Candidate selection:** prevents arbitrary files, source trees, and project roots from entering the cleanup-analysis path.
@@ -82,6 +85,13 @@ The structured `GitContextObservation` preserves the observed node, evidence,
 object form, and any un-followed `gitdir` reference. It never enters artifact
 dispatch or candidate selection.
 
+The `scan_system` API orchestrates approved roots through the same workspace
+pipeline and adds explicit global-cache analysis for pip, uv, npm, pnpm, and
+yarn structures only where bounded local markers are defensible. Global cache
+findings remain ordinary `Finding` objects and therefore pass through the same
+candidate selection and Safety Policy. System reports keep workspace findings,
+global storage, denied boundaries, partial sizes, and scan termination separate.
+
 ## Boundary rules
 
 Detectors contribute evidence. They do not own the final risk label. The Safety Policy must not depend on detector-specific implementation details beyond the documented evidence contract.
@@ -104,9 +114,21 @@ Evaluation inputs must be explicit and serializable enough for tests and reports
 
 The MVP targets Windows filesystem behavior. Junctions, reparse points, symlinks, permissions, and `.git` files must be treated as first-class uncertainty sources. Cross-platform behavior is deferred until the Windows semantics are specified and tested.
 
-The current CLI is reporting-only. It has no deletion, cleanup planning,
+The current CLI is reporting-only. `scan-system` is read-only, offline-first,
+and network-deny-by-default; it performs no telemetry, HTTP, cloud, or API
+communication. `--allow-network` permits only explicitly requested bounded
+network-filesystem I/O after the same safety gate. It has no deletion, cleanup planning,
 undo/trash, process-wide activity scan, cross-project reachability, or
 project-wide package-manager analysis.
+
+Python filesystem APIs cannot make a multi-operation path traversal perfectly
+atomic against concurrent replacement. The scanner and size collector
+revalidate the current path, type/reparse state, and available identity before
+and after bounded directory enumeration. Global-storage roots and their direct
+children also receive a pre-enumeration/containment check. Detected races are
+recorded as failures/ambiguity, and links are never intentionally followed. A
+replacement in the remaining validation-to-operation window is a platform
+limitation and must remain conservative in any future cleanup executor.
 
 ## AI and MCP boundary
 
@@ -118,7 +140,7 @@ already-authorized plan. They must never decide `RiskLabel`,
 MCP cleanup operations must accept only engine-generated `plan_id` and
 plan-item identifiers. An operation such as `delete_file(path)` is prohibited.
 Execution must revalidate immediately before acting, prefer
-Trash/Quarantine, and remain auditable. These are future boundaries, not v0.1
+Trash/Quarantine, and remain auditable. These are future boundaries, not v0.2
 runtime behavior.
 
 ## Localization boundary

@@ -28,6 +28,20 @@ These cases define the failure-oriented design and future test fixtures. They ar
 - A path disappears or changes between observation steps.
 - A protected path is stale but remains part of a repository or system workflow.
 
+## System Intelligence and Scan Safety Gate
+
+- A UNC, mapped, or network-backed root is supplied without explicit opt-in.
+- A fixed-drive classification is unavailable or the root is removable rather
+  than fixed.
+- A user-provided root is a symlink, junction, or reparse point.
+- A directory disappears between root approval and traversal.
+- Cancellation or node/file/time limits stop traversal midway.
+- A pip, uv, npm, pnpm, or yarn cache has only a familiar name but no bounded
+  tool-specific structure.
+- A valid global cache is shared by projects whose reachability was not
+  inspected.
+- A report contains partial known bytes and must not call them reclaimable.
+
 ## Evidence conflicts and failures
 
 - Two detectors assign incompatible provenance to the same node.

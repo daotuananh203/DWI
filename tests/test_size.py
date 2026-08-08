@@ -1,6 +1,10 @@
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from dwi import SizeObservation, analyze_candidate, collect_size, evaluate_analysis
 from dwi.scanner import WorkspaceScan
@@ -53,6 +57,30 @@ class SizeTests(unittest.TestCase):
             scan = WorkspaceScan(root=temporary_directory, findings=(finding,))
             self.assertEqual(scan.summary.known_analyzed_bytes, 12)
             self.assertEqual(scan.summary.potentially_reclaimable_bytes, 0)
+
+    def test_directory_replacement_is_incomplete_and_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "file.txt").write_text("x", encoding="utf-8")
+            real_lstat = os.lstat
+            calls = [0]
+
+            def changing_lstat(path):
+                calls[0] += 1
+                result = real_lstat(path)
+                if Path(path) == root and calls[0] >= 2:
+                    return SimpleNamespace(
+                        st_mode=stat.S_IFLNK | 0o777,
+                        st_dev=result.st_dev,
+                        st_ino=result.st_ino,
+                        st_file_attributes=0,
+                    )
+                return result
+
+            with patch("dwi.size.os.lstat", side_effect=changing_lstat):
+                result = collect_size(root)
+            self.assertFalse(result.complete)
+            self.assertIn(f"{root}: traversal-race", result.observation_failures)
 
 
 if __name__ == "__main__":

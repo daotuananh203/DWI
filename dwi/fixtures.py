@@ -104,6 +104,8 @@ def _normal_fixture(artifact: ArtifactKind) -> SyntheticArtifactFixture:
         ArtifactKind.MYPY_CACHE,
         ArtifactKind.RUFF_CACHE,
         ArtifactKind.PYTHON_VENV,
+        ArtifactKind.PIP_CACHE,
+        ArtifactKind.UV_CACHE,
     }
     is_python = artifact in python_artifacts
     expected_regenerability = (
@@ -124,6 +126,11 @@ def _normal_fixture(artifact: ArtifactKind) -> SyntheticArtifactFixture:
         ArtifactKind.DIST,
         ArtifactKind.BUILD,
         ArtifactKind.NEXT_BUILD,
+        ArtifactKind.PIP_CACHE,
+        ArtifactKind.UV_CACHE,
+        ArtifactKind.NPM_CACHE,
+        ArtifactKind.PNPM_CACHE,
+        ArtifactKind.YARN_CACHE,
     }
     expected = ExpectedDomainInterpretation(
         provenance=Provenance(

@@ -6,11 +6,13 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .domain import RiskLabel
 from .dispatcher import analyze_candidate
 from .git_context import GitContextObservation, observe_git_path
 from .pipeline import Finding, evaluate_analysis
+from .scan_control import ScanBudget, ScanLimits, ScanTermination
 from .size import collect_size
 
 
@@ -41,6 +43,9 @@ class WorkspaceScan:
     observation_failures: tuple[str, ...] = ()
     ambiguous_paths: tuple[str, ...] = ()
     git_observations: tuple[GitContextObservation, ...] = ()
+    termination: ScanTermination = ScanTermination.COMPLETED
+    nodes_observed: int = 0
+    files_observed: int = 0
 
     @property
     def protected_git_paths(self) -> tuple[str, ...]:
@@ -82,7 +87,39 @@ def _is_reparse(metadata: os.stat_result) -> bool:
     return bool(getattr(metadata, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
 
 
-def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
+def _metadata_identity(metadata: os.stat_result) -> tuple[int, int, int, bool]:
+    return (
+        getattr(metadata, "st_dev", 0),
+        getattr(metadata, "st_ino", 0),
+        stat.S_IFMT(metadata.st_mode),
+        _is_reparse(metadata),
+    )
+
+
+def _metadata_matches(first: os.stat_result, second: os.stat_result) -> bool:
+    first_identity = _metadata_identity(first)
+    second_identity = _metadata_identity(second)
+    if first_identity[2:] != second_identity[2:]:
+        return False
+    if first_identity[:2] == (0, 0) or second_identity[:2] == (0, 0):
+        return True
+    return first_identity[:2] == second_identity[:2]
+
+
+def _within_root(root: Path, path: Path) -> bool:
+    try:
+        return os.path.commonpath((os.path.abspath(root), os.path.abspath(path))) == os.path.abspath(root)
+    except ValueError:
+        return False
+
+
+def scan_workspace(
+    root: str | os.PathLike[str],
+    *,
+    limits: ScanLimits | None = None,
+    cancellation: Callable[[], bool] | None = None,
+    budget: ScanBudget | None = None,
+) -> WorkspaceScan:
     """Discover supported names under exactly one explicit ordinary directory."""
     root_path = Path(root)
     try:
@@ -96,38 +133,96 @@ def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
     failures: list[str] = []
     ambiguous: list[str] = []
     git_observations: list[GitContextObservation] = []
+    active_budget = budget or ScanBudget(limits=limits or ScanLimits(), cancellation=cancellation)
     seen: set[tuple[int, int]] = set()
     stack = [root_path]
     while stack:
+        if active_budget.stopped():
+            break
         current = stack.pop()
+        if not active_budget.observe_node():
+            break
         try:
             metadata = os.lstat(current)
+            if not _within_root(root_path, current):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: outside-approved-root")
+                continue
+            if stat.S_ISLNK(metadata.st_mode):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-symlink")
+                continue
+            if _is_reparse(metadata):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-reparse")
+                continue
+            if not stat.S_ISDIR(metadata.st_mode):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-not-directory")
+                continue
             identity = (getattr(metadata, "st_dev", 0), getattr(metadata, "st_ino", 0))
             if identity in seen:
                 ambiguous.append(str(current))
                 continue
             seen.add(identity)
+            pre_traversal_metadata = os.lstat(current)
+            if stat.S_ISLNK(pre_traversal_metadata.st_mode):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-symlink")
+                continue
+            if _is_reparse(pre_traversal_metadata):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-reparse")
+                continue
+            if not stat.S_ISDIR(pre_traversal_metadata.st_mode):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: current-node-not-directory")
+                continue
+            if not _metadata_matches(metadata, pre_traversal_metadata):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: traversal-race")
+                continue
             entries = sorted(os.scandir(current), key=lambda item: (item.name.casefold(), item.name))
+            after_scan = os.lstat(current)
+            if not _metadata_matches(metadata, after_scan):
+                ambiguous.append(str(current))
+                failures.append(f"{current}: traversal-race")
+                continue
         except (OSError, ValueError) as error:
+            ambiguous.append(str(current))
             failures.append(f"{current}: {type(error).__name__}")
             continue
         for entry in reversed(entries):
+            if not active_budget.observe_node():
+                break
             child = Path(entry.path)
             name = entry.name
             try:
                 if name == ".git":
                     git_observations.append(observe_git_path(child))
                     continue
-                child_metadata = entry.stat(follow_symlinks=False)
-                if entry.is_symlink() or _is_reparse(child_metadata):
+                child_metadata = os.lstat(child)
+                if not _within_root(root_path, child):
+                    ambiguous.append(str(child))
+                    failures.append(f"{child}: outside-approved-root")
+                    continue
+                child_after = os.lstat(child)
+                if not _metadata_matches(child_metadata, child_after):
+                    ambiguous.append(str(child))
+                    failures.append(f"{child}: traversal-race")
+                    continue
+                child_metadata = child_after
+                if stat.S_ISREG(child_metadata.st_mode) and not active_budget.observe_node(is_file=True):
+                    break
+                if stat.S_ISLNK(child_metadata.st_mode) or _is_reparse(child_metadata):
                     ambiguous.append(str(child))
                     continue
-                if name in _SUPPORTED_NAMES and entry.is_dir(follow_symlinks=False):
+                if name in _SUPPORTED_NAMES and stat.S_ISDIR(child_metadata.st_mode):
                     result = analyze_candidate(child)
                     if result is not None:
-                        findings.append(evaluate_analysis(result, size=collect_size(child)))
+                        findings.append(evaluate_analysis(result, size=collect_size(child, budget=active_budget)))
                     continue
-                if entry.is_dir(follow_symlinks=False):
+                if stat.S_ISDIR(child_metadata.st_mode):
                     stack.append(child)
             except (OSError, ValueError) as error:
                 failures.append(f"{child}: {type(error).__name__}")
@@ -138,4 +233,7 @@ def scan_workspace(root: str | os.PathLike[str]) -> WorkspaceScan:
         observation_failures=tuple(sorted(failures)),
         ambiguous_paths=tuple(sorted(ambiguous)),
         git_observations=tuple(sorted(git_observations, key=lambda item: (item.node.path.casefold(), item.node.path))),
+        termination=active_budget.termination,
+        nodes_observed=active_budget.nodes_observed,
+        files_observed=active_budget.files_observed,
     )

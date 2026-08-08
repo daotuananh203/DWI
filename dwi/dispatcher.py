@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .contracts import ArtifactKind
+from .global_storage import GlobalStorageDetection, GlobalStorageInterpretation
 from .mypy_cache import MypyCacheDetection, MypyCacheInterpretation, inspect_mypy_cache, interpret_mypy_cache
 from .node_artifacts import (
     BuildArtifactDetection,
@@ -39,6 +40,7 @@ Detection = (
     | NodeModulesDetection
     | BuildArtifactDetection
     | NextBuildDetection
+    | GlobalStorageDetection
 )
 Interpretation = (
     PycacheInterpretation
@@ -49,6 +51,7 @@ Interpretation = (
     | NodeModulesInterpretation
     | BuildArtifactInterpretation
     | NextBuildInterpretation
+    | GlobalStorageInterpretation
 )
 
 

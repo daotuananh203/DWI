@@ -23,7 +23,7 @@ These rules apply to every agent working in this repository.
 
 ## Scope discipline
 
-- Do not silently expand the MVP beyond Windows, CLI/reporting, Python, Node.js, and minimal Git protection/context.
+- Do not silently expand the current milestone beyond Windows, CLI/reporting, Python, Node.js, approved developer-storage locations, and minimal Git protection/context.
 - Do not add desktop UI, web UI, FastAPI, MCP, Docker analysis, Hugging Face analysis, Ollama analysis, dynamic plugin discovery, or cloud features unless the roadmap and an approved task explicitly move them into scope.
 - Avoid new dependencies. Every dependency must have a documented reason and a task-level approval.
 - Stop and ask for direction before changing architecture, safety assumptions, public domain meaning, or MVP boundaries.
