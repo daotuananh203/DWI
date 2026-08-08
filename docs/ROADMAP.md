@@ -38,19 +38,18 @@ service work, or network discovery by default.
 
 ## v0.3 — Safe Cleanup
 
-- `CleanupPlan`.
-- Immediate filesystem/evidence revalidation.
-- `ExecutionAuthorization`.
-- Trash/Quarantine.
-- Audit journal.
-- Undo/recovery.
-- Human confirmation.
+- Immutable engine-generated `CleanupPlan` and plan-item snapshots.
+- Immediate filesystem/evidence `PlanValidation`.
+- Separate metadata-only `ExecutionAuthorization`.
+- Typed future `RecoveryMetadata` and `QuarantineRecord` contracts.
+- No executor or filesystem mutation yet.
 
 This remains an internal milestone; it is not a public release.
 
-`SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` will not independently authorize
-execution. Permanent deletion remains out of scope until explicitly
-authorized.
+`SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not independently authorize
+execution. The next bounded task is isolated reversible
+Trash/Quarantine/Journal/Undo primitives against disposable test directories
+only. Permanent deletion remains out of scope until explicitly authorized.
 
 ## v0.4 — Desktop
 

@@ -24,10 +24,11 @@ shared engine.
 
 The typed domain model, detector-neutral evidence contracts, bounded artifact
 analyzers, explicit dispatcher, workspace scanner, structured Git context,
-bounded System Intelligence discovery, size accounting, and standard-library
-CLI/report adapters are implemented. The current internal milestone is v0.2
-System Intelligence and remains analysis-and-reporting-only. It does not delete
-files, create cleanup plans, call an LLM, expose MCP, access a cloud service, or
+bounded System Intelligence discovery, size accounting, standard-library
+CLI/report adapters, and v0.3 cleanup planning/validation/authorization
+contracts are implemented. The current internal milestone is v0.3 Safe Cleanup
+design. It remains analysis-and-contract-only: it does not delete or move
+files, execute plans, implement Trash/Quarantine, call an LLM, expose MCP, or
 provide a UI.
 
 Run a bounded report from one explicit workspace root:
@@ -74,6 +75,11 @@ Artifact names never map directly to risk labels. A low-risk label is available 
 
 The current bounded implementation boundary and exactly one next task are recorded in [TASKS.md](TASKS.md).
 
+The v0.3 contract layer defines immutable engine-generated cleanup plans,
+explicit trusted scan/root bindings, immediate revalidation, and separate
+engine-provenance-backed execution authorization. A `CleanupPlan` is a proposal,
+not permission to mutate data; cleanup execution remains unimplemented.
+
 Future cleanup operations must consume immutable engine-generated plans and
 validated plan-item identifiers. No interface may expose arbitrary raw-path
 deletion.
@@ -95,4 +101,4 @@ localization. Machine-readable contracts remain stable and language-neutral:
 JSON keys, enums, `RiskLabel` values, MCP tool names, API/schema identifiers,
 and internal evidence keys do not change by language. Future public
 documentation will provide `README.md` in English and `README.vi.md` in
-Vietnamese. Runtime i18n is not implemented in v0.2.
+Vietnamese. Runtime i18n is not implemented in v0.3.

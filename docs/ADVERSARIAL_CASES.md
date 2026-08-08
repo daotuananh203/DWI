@@ -50,6 +50,33 @@ These cases define the failure-oriented design and future test fixtures. They ar
 - A timeout prevents checking reachability.
 - The filesystem reports an object type that the current implementation cannot interpret.
 
+## Cleanup planning and authorization
+
+- A caller supplies a raw path list instead of engine-generated Findings.
+- A caller omits scan completeness or supplies an unknown, partial, failed,
+  denied, or skipped scan context.
+- A candidate uses a relative path, `..` escape, wrong root, outside-root path,
+  invalid filesystem identity, or a symlink/reparse-backed identity.
+- A rejected, `REVIEW_REQUIRED`, `NEVER_DELETE`, active, referenced, protected,
+  incomplete, or blocked finding is presented for planning.
+- A plan item path disappears, changes identity/type, or becomes a
+  symlink/junction/reparse point before validation.
+- Evidence, rule trace, size, protection, reachability, activity, or Safety
+  Policy posture changes after planning.
+- A partial or failed SystemScan is incorrectly treated as complete.
+- A stale validation token or replayed authorization is presented to an
+  executor.
+- A caller constructs an apparently `VALID` `PlanValidation`, copies a token,
+  modifies validation fields, or presents validation for a different plan.
+- A future quarantine destination is occupied, unavailable, or cannot be
+  journaled after a crash.
+- An AI agent attempts arbitrary raw-path deletion or attempts to manufacture
+  a risk, validation, or authorization result.
+
+Each case must fail closed. Planning and validation record structured reasons;
+future quarantine/journal/undo layers own recovery and replay handling. No
+mutation is implemented by the v0.3 contract layer.
+
 ## Required behavior
 
 Confirmed references or active consumers have a hard minimum of `REVIEW_REQUIRED` and can never result in `SAFE` or `REGENERATABLE`. `.git` directories and `.git` files are protection/context observations only; they must remain `ObservedNode`s and must never be admitted as `CleanupCandidate`s. `NEVER_DELETE` describes protection semantics rather than reclaim eligibility.

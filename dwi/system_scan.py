@@ -40,7 +40,8 @@ class RootScope(str, Enum):
 
 
 class RootStatus(str, Enum):
-    SCANNED = "scanned"
+    COMPLETE = "complete"
+    SCANNED = "complete"  # compatibility alias for the pre-v0.3 name
     PARTIAL = "partial"
     DENIED = "denied"
     SKIPPED = "skipped"
@@ -378,20 +379,26 @@ def scan_system(options: SystemScanOptions | None = None) -> SystemScan:
             failures.append(f"{request.path}: {type(error).__name__}")
             continue
         scanned_roots.append(request.path)
+        root_failures = list(result.observation_failures)
+        for finding in result.findings:
+            root_failures.extend(_finding_observation_failures(finding))
+        root_complete = result.termination is ScanTermination.COMPLETED and not root_failures
         root_observations.append(RootObservation(
             request.path,
             request.scope,
             request.label,
             gate_result.boundary,
-            RootStatus.PARTIAL if result.termination is not ScanTermination.COMPLETED else RootStatus.SCANNED,
-            "scan completed" if result.termination is ScanTermination.COMPLETED else f"scan stopped: {result.termination.value}",
+            RootStatus.COMPLETE if root_complete else RootStatus.PARTIAL,
+            "scan completed" if root_complete else (
+                f"observation incomplete: {len(root_failures)} failure(s)"
+                if result.termination is ScanTermination.COMPLETED
+                else f"scan stopped: {result.termination.value}"
+            ),
             request.artifact,
         ))
         workspace_findings.extend(result.findings)
         git_observations.extend(result.git_observations)
-        failures.extend(result.observation_failures)
-        for finding in result.findings:
-            failures.extend(_finding_observation_failures(finding))
+        failures.extend(root_failures)
         ambiguous.extend(result.ambiguous_paths)
 
     for request in storage_requests:
@@ -409,14 +416,20 @@ def scan_system(options: SystemScanOptions | None = None) -> SystemScan:
             size=collect_size(request.path, budget=budget),
         )
         global_findings.append(finding)
-        failures.extend(_finding_observation_failures(finding))
+        global_failures = _finding_observation_failures(finding)
+        failures.extend(global_failures)
+        global_complete = budget.termination is ScanTermination.COMPLETED and not global_failures
         root_observations.append(RootObservation(
             request.path,
             request.scope,
             request.label,
             gate_result.boundary,
-            RootStatus.PARTIAL if budget.termination is not ScanTermination.COMPLETED else RootStatus.SCANNED,
-            "bounded global cache analysis completed" if budget.termination is ScanTermination.COMPLETED else f"analysis stopped: {budget.termination.value}",
+            RootStatus.COMPLETE if global_complete else RootStatus.PARTIAL,
+            "bounded global cache analysis completed" if global_complete else (
+                f"global cache evidence incomplete: {len(global_failures)} failure(s)"
+                if budget.termination is ScanTermination.COMPLETED
+                else f"analysis stopped: {budget.termination.value}"
+            ),
             request.artifact,
         ))
 

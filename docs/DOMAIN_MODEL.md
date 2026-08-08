@@ -33,6 +33,13 @@ network boundary. A denial is recorded, never converted into a guessed scan.
 and file-limited results. A partial result remains valid evidence with explicit
 incompleteness; it never implies that unvisited paths are absent or safe.
 
+`RootStatus.COMPLETE` means the approved root traversal and bounded analysis
+completed without recorded root or finding observation failures. `PARTIAL`
+means traversal stopped early or the root produced incomplete/failed evidence;
+`FAILED` means the root could not be safely observed. `SCANNED` is retained only
+as a compatibility alias for `COMPLETE`. A global root with failed detector
+evidence is therefore `PARTIAL`, never a clean `COMPLETE` root.
+
 ### CleanupCandidate
 
 An artifact that has passed an explicit candidate-selection boundary and may be evaluated by safety policy. Candidate status must be based on artifact evidence, not merely a matching directory name.
@@ -51,14 +58,27 @@ An auditable record of the ordered rules and evidence that produced a result. A 
 
 An immutable, engine-generated proposed action set. A plan contains stable
 plan-item identifiers and the exact findings/evidence snapshot from which it
-was derived. A plan is not an authorization to execute.
+was derived. The pure v0.3 planner requires an engine-issued trusted scan
+context and canonical `ApprovedRoot` binding, accepts `Finding` objects and
+filesystem identity observations, and never accepts an arbitrary path list.
+Candidate paths must be absolute and contained by the bound root. It excludes
+rejected, protected, active, referenced, incomplete, uncertain, or non-eligible
+findings. A plan is not an authorization to execute.
 
 ### PlanValidation
 
 A deterministic result of rechecking a `CleanupPlan` against the current
-filesystem and evidence immediately before execution. Validation may preserve
-or reduce operational eligibility, but it may never make execution less
+filesystem and evidence snapshots immediately before execution. It requires a
+new engine-issued trusted scan context; omitted, unknown, partial, failed,
+denied, or skipped scan state is inconclusive. It distinguishes
+`VALID`, `STALE_CHANGED`, `BLOCKED`, and `FAILED_INCONCLUSIVE`. Filesystem
+identity/type, path identity, evidence, rule trace, size, risk, action,
+protection, reachability, and activity changes are material. Validation may
+preserve or reduce operational eligibility, but it may never make execution less
 conservative. A stale or materially changed plan is blocked or invalidated.
+Validation success carries private engine provenance for the exact plan,
+current snapshot set, and validation state; public fields and copied tokens are
+not sufficient.
 
 ### ExecutionAuthorization
 
@@ -67,12 +87,23 @@ It is separate from both intrinsic `RiskLabel` and current
 `ActionEligibility`; `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not
 automatically authorize execution.
 
+Authorization is issued only for a non-empty engine-generated plan with a
+`VALID` engine-issued validation proof. The authorization binds the exact plan
+digest and validation-state digest, so a later validation after any material
+state change cannot reuse it. Issuing authorization performs no mutation.
+
 ### CleanupExecutor, Trash/Quarantine, and Journal/Undo
 
 The executor performs only an authorized plan. Initial cleanup releases must
 prefer reversible Trash/Quarantine with an audit journal and Undo/recovery.
 Permanent deletion is an advanced future capability and requires explicit
 authorization and a separate safety design.
+
+The v0.3 contract defines only immutable `RecoveryMetadata` and
+`QuarantineRecord` shapes: recovery identifier, original path, future
+quarantine location, plan/item identifiers, timestamps, state, and failure
+reason. It does not implement a quarantine destination, journal storage, move,
+restore, or delete operation.
 
 ## State dimensions
 
@@ -92,11 +123,13 @@ These dimensions must remain distinct:
 - **CleanupPlan:** immutable engine-generated proposed action set, never an arbitrary path list supplied by an interface.
 - **PlanValidation:** immediate deterministic revalidation of a plan against current filesystem/evidence.
 - **ExecutionAuthorization:** final permission state after policy and plan validation; it is not implied by a risk label or action eligibility.
+- **TrustedScanContext:** engine-issued scan completeness/provenance and observed-root context; omitted or incomplete context cannot support planning.
+- **ApprovedRoot:** engine-derived canonical root binding retained by a plan; candidate paths must remain contained by it.
 - **GitObjectForm:** whether the explicit `.git` path was a valid directory,
   valid gitdir-reference file, missing, inaccessible, or ambiguous. It is
   protection/context evidence, not a reclaim conclusion.
 - **RootBoundary / RootStatus:** the safety classification and disposition of
-  an approved, denied, skipped, failed, or partial scan root.
+  an approved, denied, skipped, failed, partial, or complete scan root.
 - **ScanTermination:** whether a bounded scan completed or stopped because of
   cancellation or an explicit resource limit.
 
@@ -172,6 +205,20 @@ analysis result
 Agent and MCP interfaces must identify cleanup targets only through
 engine-generated `plan_id` and plan-item identifiers. They must never submit an
 arbitrary filesystem path as a cleanup target.
+
+The lifecycle contract has a strict gate at every transition:
+
+```text
+Finding
+  -> eligible immutable CleanupPlanItem
+  -> immediate PlanValidation == VALID
+  -> ExecutionAuthorization == AUTHORIZED
+  -> future executor only
+```
+
+`SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` are necessary policy posture at plan
+creation but are not execution permission. Partial or failed `SystemScan`
+results cannot satisfy the plan or validation contract.
 
 Presentation localization is not part of the domain meaning. Human-facing
 English and Vietnamese text may vary, but machine-readable JSON keys, enums,

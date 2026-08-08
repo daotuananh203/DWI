@@ -10,9 +10,9 @@ interfaces over the same core. They must never create an alternate safety path.
 
 ## Shared product pipeline
 
-The diagram includes future cleanup stages. v0.2 currently stops after
-deterministic system/workspace CLI and JSON reports; no cleanup stage is
-implemented.
+The diagram includes future cleanup stages. v0.3 implements only the pure
+planning, validation, authorization, and recovery-record contracts; no cleanup
+stage performs filesystem mutation.
 
 ```text
 Filesystem observations
@@ -70,9 +70,9 @@ system; an unknown basename returns no analysis result.
 - **Safety Policy:** applies ordered gates and produces the risk label, action eligibility, and rule trace.
 - **Reclaim ranking:** estimates reclaim priority independently from safety.
 - **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions.
-- **Cleanup planning:** future engine-generated immutable plans identify stable plan items; plans are proposals, not authorization.
-- **Plan validation:** future immediate revalidation checks current filesystem/evidence and can only preserve or increase conservatism.
-- **Execution authorization:** future engine-controlled permission gate after validation; it is not implied by `SAFE` or `ELIGIBLE_FOR_EXPLICIT_ACTION`.
+- **Cleanup planning:** pure v0.3 logic creates immutable engine-generated plans from eligible Findings, complete trusted scan context, canonical approved-root bindings, and valid filesystem identity snapshots; raw paths are not accepted as plan inputs.
+- **Plan validation:** pure v0.3 logic requires a new trusted scan context and compares current snapshots immediately before execution, returning valid, stale, blocked, or inconclusive states; it can only preserve or increase conservatism.
+- **Execution authorization:** pure v0.3 logic issues metadata-only authorization from an internal engine proof bound to the exact plan and validation state; it is not implied by `SAFE`, `ELIGIBLE_FOR_EXPLICIT_ACTION`, copied tokens, or public validation fields.
 - **Cleanup execution:** future executor accepts only authorized engine plans, prefers Trash/Quarantine, and records an audit journal for Undo/recovery.
 
 The scanner adapts each dispatcher result through a single-candidate selection
@@ -92,6 +92,12 @@ findings remain ordinary `Finding` objects and therefore pass through the same
 candidate selection and Safety Policy. System reports keep workspace findings,
 global storage, denied boundaries, partial sizes, and scan termination separate.
 
+Root status is part of the planning safety boundary: `COMPLETE` means no root or
+finding observation failures were recorded, `PARTIAL` means traversal or
+evidence was incomplete, and `FAILED` means safe observation failed. A global
+cache root with failed evidence is `PARTIAL`, so it cannot silently satisfy
+cleanup planning.
+
 ## Boundary rules
 
 Detectors contribute evidence. They do not own the final risk label. The Safety Policy must not depend on detector-specific implementation details beyond the documented evidence contract.
@@ -104,7 +110,7 @@ The domain core must not know whether a result came from the CLI, a future deskt
 
 ## Future architecture, explicitly out of MVP
 
-The project may later add a desktop UI, MCP adapter, optional LLM explanation layer, broader detector registry, multi-project reachability graph, persistent index, or cleanup planner. Each must consume already-computed core results and must not bypass safety policy.
+The project may later add a desktop UI, MCP adapter, optional LLM explanation layer, broader detector registry, multi-project reachability graph, persistent index, or cleanup executor. Each must consume already-computed core results and must not bypass safety policy. The v0.3 cleanup planner, validator, and authorization contracts remain pure domain operations.
 
 ## Determinism and auditability
 
@@ -117,9 +123,11 @@ The MVP targets Windows filesystem behavior. Junctions, reparse points, symlinks
 The current CLI is reporting-only. `scan-system` is read-only, offline-first,
 and network-deny-by-default; it performs no telemetry, HTTP, cloud, or API
 communication. `--allow-network` permits only explicitly requested bounded
-network-filesystem I/O after the same safety gate. It has no deletion, cleanup planning,
+network-filesystem I/O after the same safety gate. It has no deletion or cleanup execution,
 undo/trash, process-wide activity scan, cross-project reachability, or
-project-wide package-manager analysis.
+project-wide package-manager analysis. v0.3 cleanup contracts are pure domain
+operations; no executor, move, delete, quarantine, journal I/O, or restore
+operation is implemented.
 
 Python filesystem APIs cannot make a multi-operation path traversal perfectly
 atomic against concurrent replacement. The scanner and size collector
@@ -140,8 +148,8 @@ already-authorized plan. They must never decide `RiskLabel`,
 MCP cleanup operations must accept only engine-generated `plan_id` and
 plan-item identifiers. An operation such as `delete_file(path)` is prohibited.
 Execution must revalidate immediately before acting, prefer
-Trash/Quarantine, and remain auditable. These are future boundaries, not v0.2
-runtime behavior.
+Trash/Quarantine, and remain auditable. These are future executor boundaries, not v0.3
+mutation runtime behavior.
 
 ## Localization boundary
 

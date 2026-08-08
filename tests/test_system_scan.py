@@ -147,7 +147,7 @@ class SystemScanTests(unittest.TestCase):
             root = Path(temporary_directory)
             with patch("dwi.scanner.os.scandir", side_effect=FileNotFoundError()):
                 result = scan_system(self._root_options(root))
-            self.assertEqual(result.root_observations[0].status, RootStatus.SCANNED)
+            self.assertEqual(result.root_observations[0].status, RootStatus.PARTIAL)
             self.assertTrue(result.observation_failures)
 
     def test_cancellation_returns_deterministic_partial_result(self) -> None:
@@ -384,6 +384,7 @@ class SystemScanTests(unittest.TestCase):
             self.assertTrue(failed_evidence)
             matching = [item for item in first.observation_failures if "global_storage_structure_observation" in item]
             self.assertEqual(len(matching), 1)
+            self.assertEqual(first.root_observations[0].status, RootStatus.PARTIAL)
             self.assertEqual(first.summary.observation_failure_count, len(first.observation_failures))
             with patch("dwi.global_storage._direct_entries", return_value=({}, False, "synthetic-structure-failure")):
                 second = scan_system(SystemScanOptions(

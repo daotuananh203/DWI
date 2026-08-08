@@ -23,8 +23,9 @@ RiskLabel
 ```
 
 This is a product direction and domain boundary. The v0.1 workspace analysis
-slice and the v0.2 bounded System Intelligence/reporting slice are implemented
-today; cleanup remains future work.
+slice and v0.2 bounded System Intelligence/reporting slice are frozen. The v0.3
+planning/validation/authorization contract is implemented, but cleanup
+execution remains future work.
 
 ## Problem
 
@@ -58,9 +59,9 @@ The MVP is deliberately narrow:
 - Four risk labels: `SAFE`, `REGENERATABLE`, `REVIEW_REQUIRED`, and `NEVER_DELETE`.
 - No file deletion, automatic cleanup, desktop UI, web UI, FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis, Ollama analysis, dynamic plugin discovery, or cloud features.
 
-The v0.2 scope remains analysis-only and offline-first. Cleanup planning, revalidation,
-execution authorization, Trash/Quarantine, journaling, Undo, Desktop, and MCP
-are roadmap milestones, not current capabilities.
+The v0.3 scope remains analysis-and-contract-only and offline-first. Cleanup
+execution, Trash/Quarantine operations, journaling I/O, Undo, Desktop, and MCP
+are roadmap milestones, not current runtime capabilities.
 
 ## Release and bilingual strategy
 

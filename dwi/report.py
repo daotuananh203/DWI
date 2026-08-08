@@ -82,7 +82,7 @@ def system_to_dict(scan: SystemScan) -> dict[str, Any]:
     ]
     return {
         "requested_roots": list(scan.requested_roots),
-        "roots_actually_scanned": [item["path"] for item in roots if item["status"] in {RootStatus.SCANNED.value, RootStatus.PARTIAL.value}],
+        "roots_actually_scanned": [item["path"] for item in roots if item["status"] in {RootStatus.COMPLETE.value, RootStatus.PARTIAL.value}],
         "roots_denied_or_skipped": [item for item in roots if item["status"] in {RootStatus.DENIED.value, RootStatus.SKIPPED.value, RootStatus.FAILED.value}],
         "root_observations": roots,
         "workspace_findings": [finding_to_dict(finding) for finding in scan.workspace_findings],

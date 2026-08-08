@@ -41,7 +41,52 @@ diagnostic upload, HTTP, cloud, or API communication. Network filesystem I/O is
 denied by default and only occurs for explicitly opted-in approved network
 roots; it is not a telemetry or cloud communication path.
 
-## Future cleanup invariants
+## v0.3 planning and authorization invariants
+
+22. A cleanup plan may be created only from engine-produced `Finding` objects
+and complete supporting snapshots. An interface-provided raw path list is not a
+plan and cannot become a plan item.
+
+23. Every plan item is immutable and binds the exact artifact, path, filesystem
+identity, evidence, rule trace, size, risk, action, protection, reachability,
+and activity snapshot from which it was created.
+
+24. Revalidation is immediate and deterministic. Disappearance, identity/type
+change, symlink/junction/reparse substitution, protection/reference/activity
+change, evidence insufficiency, size change, or a more cautious Safety Policy
+posture blocks or invalidates the plan.
+
+25. Revalidation may never make a plan more permissive. `SAFE` and
+`ELIGIBLE_FOR_EXPLICIT_ACTION` do not authorize execution. `REVIEW_REQUIRED`,
+`NEVER_DELETE`, active/reference uncertainty, protection, and incomplete or
+failed evidence cannot authorize execution.
+
+26. `ExecutionAuthorization` is separate from `CleanupPlan` and
+`PlanValidation`, binds an engine-issued proof and successful validation state,
+and cannot be reused after relevant state changes. Authorization itself
+performs no mutation.
+
+27. Every future mutation attempt must be attributable to an engine-generated
+plan item and produce an auditable journal record. The first mutation release
+must be reversible through Trash/Quarantine and Undo; permanent deletion is
+out of scope.
+
+28. Cleanup planning and validation require an explicit engine-issued trusted
+scan context. Omitted, unknown, partial, failed, denied, skipped, or
+incomplete scan state must fail closed and cannot produce executable planning
+state.
+
+29. Every cleanup plan retains an engine-derived canonical approved-root
+binding. Candidate paths must be absolute, normalized, contained by that root,
+and backed by a valid positive filesystem identity; relative, escaping,
+mismatched, symlink, junction, and reparse-backed paths are not plannable.
+
+30. `PlanValidation` success requires an engine-issued capability bound to the
+exact immutable plan, current snapshot set, trusted revalidation context, and
+validation state. Equivalent public fields or copied tokens cannot manufacture
+authorization.
+
+## Future executor invariants
 
 The following invariants apply when cleanup planning and execution enter the
 roadmap. They do not authorize implementation in v0.1.
@@ -93,7 +138,7 @@ The following questions must not be collapsed into one field:
 
 ## Review standard
 
-The MVP only analyzes and reports. It does not delete, move, quarantine, or otherwise mutate user data. Any future cleanup operation requires a separate approved design covering confirmation, recovery, journaling, race conditions, and failure handling.
+The current v0.3 layer only models and validates cleanup plans. It does not delete, move, quarantine, or otherwise mutate user data. Any future cleanup executor requires a separate approved design covering confirmation, recovery, journaling, race conditions, and failure handling.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` are not execution authorization. A
 future executor must require an immutable engine-generated plan, immediate
