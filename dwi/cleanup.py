@@ -56,7 +56,11 @@ class ExecutionAuthorizationStatus(str, Enum):
 
 class QuarantineState(str, Enum):
     PLANNED = "planned"
+    QUARANTINING = "quarantining"
+    QUARANTINE_COMMITTED_UNJOURNALED = "quarantine_committed_unjournaled"
     QUARANTINED = "quarantined"
+    RESTORING = "restoring"
+    RESTORE_COMMITTED_UNJOURNALED = "restore_committed_unjournaled"
     RESTORED = "restored"
     FAILED = "failed"
 
@@ -344,6 +348,7 @@ class RecoveryMetadata:
     plan_item_id: PlanItemId
     planned_at: str
     completed_at: str | None = None
+    original_identity: FilesystemIdentity | None = None
 
 
 @dataclass(frozen=True)

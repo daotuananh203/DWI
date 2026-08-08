@@ -70,12 +70,18 @@ These cases define the failure-oriented design and future test fixtures. They ar
   modifies validation fields, or presents validation for a different plan.
 - A future quarantine destination is occupied, unavailable, or cannot be
   journaled after a crash.
+- A quarantine rename commits but its final `QUARANTINED` journal append fails.
+- A restore rename commits but its final `RESTORED` journal append fails.
+- A journal record is edited, deleted, reordered, duplicated, truncated, or
+  has a broken sequence/previous-hash link.
 - An AI agent attempts arbitrary raw-path deletion or attempts to manufacture
   a risk, validation, or authorization result.
 
 Each case must fail closed. Planning and validation record structured reasons;
-future quarantine/journal/undo layers own recovery and replay handling. No
-mutation is implemented by the v0.3 contract layer.
+the isolated mutation layer additionally owns journaled recovery and replay
+handling only below an explicitly marked disposable temporary root. A committed
+rename remains explicitly recoverable when final journalization fails. It never
+accepts a user-workspace or arbitrary raw-path mutation target.
 
 ## Required behavior
 

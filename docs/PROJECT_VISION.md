@@ -24,8 +24,9 @@ RiskLabel
 
 This is a product direction and domain boundary. The v0.1 workspace analysis
 slice and v0.2 bounded System Intelligence/reporting slice are frozen. The v0.3
-planning/validation/authorization contract is implemented, but cleanup
-execution remains future work.
+planning/validation/authorization contract and an isolated disposable-root
+reversible mutation primitive are implemented. User-workspace cleanup execution
+remains future work.
 
 ## Problem
 
@@ -59,9 +60,11 @@ The MVP is deliberately narrow:
 - Four risk labels: `SAFE`, `REGENERATABLE`, `REVIEW_REQUIRED`, and `NEVER_DELETE`.
 - No file deletion, automatic cleanup, desktop UI, web UI, FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis, Ollama analysis, dynamic plugin discovery, or cloud features.
 
-The v0.3 scope remains analysis-and-contract-only and offline-first. Cleanup
-execution, Trash/Quarantine operations, journaling I/O, Undo, Desktop, and MCP
-are roadmap milestones, not current runtime capabilities.
+The v0.3 scope remains offline-first and bounded. Its only mutation capability
+is an internal engine path for explicitly marked disposable test roots:
+reversible quarantine/restore plus a tamper-detectable append-only journal.
+User-workspace cleanup execution, public Trash/Quarantine, Desktop, and MCP are
+roadmap milestones, not current runtime capabilities.
 
 ## Release and bilingual strategy
 

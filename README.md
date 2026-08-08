@@ -26,10 +26,11 @@ The typed domain model, detector-neutral evidence contracts, bounded artifact
 analyzers, explicit dispatcher, workspace scanner, structured Git context,
 bounded System Intelligence discovery, size accounting, standard-library
 CLI/report adapters, and v0.3 cleanup planning/validation/authorization
-contracts are implemented. The current internal milestone is v0.3 Safe Cleanup
-design. It remains analysis-and-contract-only: it does not delete or move
-files, execute plans, implement Trash/Quarantine, call an LLM, expose MCP, or
-provide a UI.
+contracts are implemented. The current internal milestone also contains
+isolated, reversible Quarantine/Journal/Undo primitives guarded to explicitly
+marked disposable directories under the operating-system temporary directory.
+They are test and engine-internal capabilities only: no user-workspace cleanup,
+permanent deletion, public execution interface, LLM, MCP, or UI is implemented.
 
 Run a bounded report from one explicit workspace root:
 
@@ -50,8 +51,10 @@ reparse points are never followed, and limits or cancellation produce
 deterministic partial results. Use `--allow-network` only for an explicit
 opt-in; network scanning is never the default.
 
-DWI is offline-first and read-only. It performs no telemetry, automatic
-diagnostic upload, HTTP, cloud, or API communication. Network filesystem access
+DWI analysis and public interfaces are offline-first and read-only. The only
+mutation path is the bounded internal disposable-root test primitive described
+above. DWI performs no telemetry, automatic diagnostic upload, HTTP, cloud, or
+API communication. Network filesystem access
 is denied by default; explicit `--allow-network` may perform filesystem I/O on
 approved UNC, mapped, or other network-backed roots. Reports containing paths
 remain local to the machine.
@@ -78,7 +81,13 @@ The current bounded implementation boundary and exactly one next task are record
 The v0.3 contract layer defines immutable engine-generated cleanup plans,
 explicit trusted scan/root bindings, immediate revalidation, and separate
 engine-provenance-backed execution authorization. A `CleanupPlan` is a proposal,
-not permission to mutate data; cleanup execution remains unimplemented.
+not permission to mutate data. The isolated mutation primitive accepts only
+that exact plan/validation/authorization chain and records reversible moves in
+an append-only journal; it is not a general cleanup executor.
+The mutation functions are intentionally kept in the internal `dwi.mutation`
+module and are not exported as convenient top-level package APIs. Any future
+untrusted interface must use opaque engine-issued handles rather than
+constructing mutation capabilities.
 
 Future cleanup operations must consume immutable engine-generated plans and
 validated plan-item identifiers. No interface may expose arbitrary raw-path

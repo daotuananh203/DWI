@@ -86,6 +86,20 @@ exact immutable plan, current snapshot set, trusted revalidation context, and
 validation state. Equivalent public fields or copied tokens cannot manufacture
 authorization.
 
+31. A mutation state must reflect filesystem reality. If a quarantine or
+restore rename has committed but its final journal append fails, the result is
+an explicit recoverable post-rename state, never an ordinary `FAILED` state.
+Durable pre-mutation intent must retain the original path, destination,
+recovery identity, plan identity, item identity, expected filesystem identity,
+and intended transition.
+
+32. The append-only mutation journal uses explicit genesis, strictly monotonic
+sequence numbers, previous-record hashes, and current-record hashes. Broken
+chains, edits, duplicate lines, missing middle records, reordering, and
+incomplete final lines fail closed. This is corruption/tamper evidence, not
+authenticated cryptographic trust; complete-journal rewrite attacks remain an
+external trust-boundary concern.
+
 ## Future executor invariants
 
 The following invariants apply when cleanup planning and execution enter the
@@ -138,7 +152,13 @@ The following questions must not be collapsed into one field:
 
 ## Review standard
 
-The current v0.3 layer only models and validates cleanup plans. It does not delete, move, quarantine, or otherwise mutate user data. Any future cleanup executor requires a separate approved design covering confirmation, recovery, journaling, race conditions, and failure handling.
+The current v0.3 layer includes a separate mutation primitive, but it is hard
+bounded to explicitly marked disposable directories under the operating-system
+temporary directory. It performs only authorized, reversible quarantine/restore
+moves and append-only journal writes; it does not mutate user workspaces or
+provide permanent deletion. Any real cleanup executor requires a separate
+approved design covering confirmation, recovery, journaling, race conditions,
+and failure handling.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` are not execution authorization. A
 future executor must require an immutable engine-generated plan, immediate

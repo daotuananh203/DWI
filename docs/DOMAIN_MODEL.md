@@ -99,11 +99,26 @@ prefer reversible Trash/Quarantine with an audit journal and Undo/recovery.
 Permanent deletion is an advanced future capability and requires explicit
 authorization and a separate safety design.
 
-The v0.3 contract defines only immutable `RecoveryMetadata` and
-`QuarantineRecord` shapes: recovery identifier, original path, future
-quarantine location, plan/item identifiers, timestamps, state, and failure
-reason. It does not implement a quarantine destination, journal storage, move,
-restore, or delete operation.
+The v0.3 contract also has isolated mutation primitives for explicitly marked
+disposable directories below the operating-system temporary directory. An
+engine-issued `DisposableRoot`, `QuarantineRoot`, and `AuditJournal` bind the
+operation to that test boundary. Authorized plan items are moved by a
+same-filesystem, non-overwriting Windows rename into quarantine and can be
+restored through a validated recovery identifier. The journal records planned,
+quarantining, quarantined, restoring, restored, failed, and explicit
+post-rename-but-not-finalized states. Every record carries a strict sequence,
+previous-record hash, and current-record hash. This detects corruption,
+deletion, reordering, and broken chains, but is tamper evidence rather than
+authenticated trust: an attacker who rewrites the complete journal can
+recompute the chain. A final complete-line truncation cannot be detected from
+the journal alone; incomplete final lines are rejected. This is not a
+user-workspace executor, public cleanup API, or permanent deletion
+implementation.
+
+The mutation functions, disposable-root capabilities, and journal types are
+kept in the internal `dwi.mutation` module rather than widened into convenient
+top-level package exports. Future untrusted interfaces must use opaque
+engine-issued handles at their trust boundary.
 
 ## State dimensions
 
