@@ -38,6 +38,7 @@ from .fixtures import (
     fixture_by_id,
     initial_artifact_fixtures,
 )
+from .pycache import PycacheDetection, PycacheInterpretation, inspect_pycache, interpret_pycache
 
 __all__ = [
     "ActionEligibility",
@@ -75,4 +76,8 @@ __all__ = [
     "SyntheticArtifactFixture",
     "fixture_by_id",
     "initial_artifact_fixtures",
+    "PycacheDetection",
+    "PycacheInterpretation",
+    "inspect_pycache",
+    "interpret_pycache",
 ]

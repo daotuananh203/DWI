@@ -44,6 +44,8 @@ Git control metadata is observed only for protection and context. It is not a cl
 
 Future detectors should record the exact path, observed object type, marker evidence, provenance basis, `RegenerabilityState` evidence, observation failures, regeneration conditions, reachability checks, protection findings, and rule version. Artifact names alone are insufficient. A detector must not emit `RiskLabel.REGENERATABLE`; that label belongs to the Safety Policy after all gates pass.
 
+For the first `__pycache__` detector, the contract additionally records the exact directory-name observation. This is raw path evidence used to prevent a name-only match from establishing artifact identity; it is not a domain-state or risk conclusion. An embedded source filename reference is recorded separately from recreation-input availability; the former does not prove that the latter is present.
+
 ## Open catalog questions
 
 - Which exact lockfile formats and package-manager stores are in MVP scope?

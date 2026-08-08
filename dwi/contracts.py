@@ -88,14 +88,18 @@ _COMMON_KEYS = (
     "path_object_observation",
     "metadata_readability_observation",
     "generator_indicator_observation",
-    "recreation_input_observation",
+    "recreation_input_availability_observation",
     "reference_check_observation",
     "runtime_activity_observation",
     "protection_indicator_observation",
 )
 
 _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
-    ArtifactKind.PYCACHE: ("python_bytecode_marker", "python_source_reference_observation"),
+    ArtifactKind.PYCACHE: (
+        "pycache_directory_name_observation",
+        "python_bytecode_marker",
+        "python_source_reference_observation",
+    ),
     ArtifactKind.PYTEST_CACHE: ("pytest_cache_marker", "cache_layout_observation"),
     ArtifactKind.MYPY_CACHE: ("mypy_cache_marker", "cache_layout_observation"),
     ArtifactKind.RUFF_CACHE: ("ruff_cache_marker", "cache_layout_observation"),
@@ -145,6 +149,8 @@ _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
         requirements=_requirements(artifact),
         evidence_notes=(
             "Evidence keys describe observations only; no key maps directly to a domain state or RiskLabel.",
+            "PYCACHE includes an exact directory-name observation so a name-only match cannot establish artifact identity.",
+            "A source reference observation is distinct from recreation-input availability evidence.",
             "Confirmed references, uncertainty, or conflicts must fail closed in policy evaluation.",
         ),
     )

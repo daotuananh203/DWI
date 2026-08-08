@@ -25,7 +25,7 @@ class EvidenceContractTests(unittest.TestCase):
             "path_object_observation",
             "metadata_readability_observation",
             "generator_indicator_observation",
-            "recreation_input_observation",
+            "recreation_input_availability_observation",
             "reference_check_observation",
             "runtime_activity_observation",
             "protection_indicator_observation",
