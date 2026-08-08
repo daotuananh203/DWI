@@ -1,65 +1,102 @@
 # Roadmap
 
-## Completed initialization
+DWI evolves from a deterministic workspace analyzer into a full Developer
+Storage Intelligence & Safe Cleanup System. Every milestone keeps the shared
+evidence → interpretation → Safety Policy engine authoritative. v0.1 through
+v0.5 are internal development milestones and are not public releases. The
+repository is released publicly on GitHub only when v1.0.0 reaches the complete
+North Star. Roadmap items do not authorize implementation until they become the
+single task in `TASKS.md`.
 
-- Project vision and scope boundaries.
-- Domain vocabulary and risk-label semantics.
-- Safety invariants and conservative evidence posture.
-- Architecture boundaries and evidence pipeline.
-- Initial Python, Node.js, and Git evidence catalog.
-- Adversarial case catalog.
+## v0.1 — Workspace Intelligence
 
-## Completed bounded analysis layer
+- Current CLI workspace analysis.
+- Deterministic evidence, safety, and reporting.
+- Internal milestone only; no public GitHub release.
 
-- Typed immutable domain model and detector-neutral evidence contracts.
-- Read-only analyzers for the four initial Python caches.
-- Read-only `.venv` / `venv` analysis with a candidate-local boundary.
-- Read-only Node.js analysis for `node_modules`, `dist`, `build`, and `.next`.
-- Explicit single-candidate dispatcher with no recursive discovery.
-- Synthetic and temporary-directory adversarial tests for the bounded analyzers.
+Current v0.1 is analysis-and-reporting-only. It does not perform whole-system
+scanning, cleanup planning, execution, Trash/Quarantine, Undo, Desktop, or MCP.
 
-## Completed end-to-end reporting layer
+## v0.2 — System Intelligence
 
-- Deterministic bounded recursive discovery below one explicit workspace root.
-- Candidate-selection and Safety Policy adapter producing auditable findings.
-- Read-only candidate size accounting with incomplete/failure states.
-- Standard-library table and JSON CLI reports.
-- Synthetic tests for discovery boundaries, size behavior, selection, policy
-  hard gates, deterministic output, and CLI errors.
+- Whole-system developer-storage discovery.
+- Global caches and tool storage.
+- Windows hardening.
+- More ecosystems.
 
-## MVP
+This remains an internal milestone; it is not a public release.
 
-The MVP remains Windows-only and analysis/reporting-only:
+## v0.3 — Safe Cleanup
 
-- Typed domain model and evidence schema.
-- Deterministic ordered safety policy.
-- Python and Node.js artifact detectors.
-- Minimal Git protection/context observation; `.git` directories and `.git` files remain outside the `CleanupCandidate` pipeline.
-- Filesystem scanner with explicit handling of permissions, links, junctions, and reparse points.
-- CLI table output and JSON reports.
-- Deterministic unit and fixture tests.
+- `CleanupPlan`.
+- Immediate filesystem/evidence revalidation.
+- `ExecutionAuthorization`.
+- Trash/Quarantine.
+- Audit journal.
+- Undo/recovery.
+- Human confirmation.
 
-The MVP does not delete, move, quarantine, or automatically clean user data.
+This remains an internal milestone; it is not a public release.
 
-## Post-MVP
+`SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` will not independently authorize
+execution. Permanent deletion remains out of scope until explicitly
+authorized.
 
-Potential extensions, each requiring a separate scope decision:
+## v0.4 — Desktop
 
-- Broader package-manager and IDE coverage.
-- Multi-project reachability graph and shared-cache analysis.
-- Persistent local index for faster repeated scans.
-- Desktop or local web presentation.
-- Cleanup planning with human confirmation, move-to-trash, recovery journal, and race-condition handling.
-- MCP read-only adapter.
-- Optional LLM explanation layer that can only summarize already-computed evidence and decisions.
+- Desktop UI over the same core engine.
+- System overview.
+- Findings and explanations.
+- Cleanup-plan review.
 
-## Thesis and research extensions
+This remains an internal milestone; it is not a public release.
 
-- Ground-truth dataset of workspace artifacts and manually reviewed labels.
-- Evaluation of safety precision, recall, and false-positive behavior by label.
-- Scan time and memory measurements on representative Windows workspaces.
-- User study comparing evidence-based explanations with size-only disk reports.
-- Empirical study of shared reachability and reclaim priority.
-- Reproducible experiment reports and limitations analysis.
+## v0.5 — MCP / Agent Integration
 
-All roadmap items after the MVP are ideas, not authorization to implement them.
+Planned MCP operations:
+
+- `scan_system`
+- `explain_finding`
+- `create_cleanup_plan`
+- `review_cleanup_plan`
+- `validate_cleanup_plan`
+- `execute_cleanup_plan`
+- `undo_cleanup`
+
+MCP must never expose arbitrary raw-path deletion such as
+`delete_file(path)`. Cleanup execution accepts only engine-generated plan and
+plan-item identifiers after immediate revalidation and authorization.
+
+This remains an internal milestone; it is not a public release.
+
+## v1.0 — Public Complete
+
+- Desktop + CLI + MCP.
+- Windows whole-system developer-storage discovery.
+- Deterministic evidence → interpretation → Safety Policy engine.
+- Safe cleanup planning.
+- Immediate revalidation and TOCTOU protection.
+- `ExecutionAuthorization`.
+- Trash/Quarantine.
+- Audit journal.
+- Undo/recovery.
+- Windows installer/package.
+- Real-world validation and benchmarks.
+- Polished public documentation.
+- English (`en`) and Vietnamese (`vi`) localization.
+
+The v1.0.0 public release is allowed only when every item above is complete
+and the complete North Star is reached. Desktop, CLI, and MCP must use the
+same core Safety Policy engine.
+
+## Cross-cutting safety direction
+
+- Preserve deterministic observations → evidence → interpretation → Safety
+  Policy.
+- Keep `RiskLabel`, `ActionEligibility`, `CleanupPlan`, `PlanValidation`, and
+  `ExecutionAuthorization` separate.
+- Keep AI/LLM outside all safety and authorization decisions.
+- Prefer Trash/Quarantine and auditable recovery over permanent deletion.
+
+All roadmap items after the current task are future direction, not permission
+to implement them.

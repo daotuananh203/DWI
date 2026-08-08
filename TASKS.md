@@ -11,7 +11,8 @@ reports are implemented and covered by synthetic/tempdir tests.
 There is still no disk-wide discovery, UI, MCP adapter, LLM integration,
 cleanup execution, or dynamic plugin system. Git is currently represented only
 as a scanner boundary; a structured Git protection/context adapter is not yet
-implemented.
+implemented. Cleanup planning, revalidation, execution authorization,
+Trash/Quarantine, journaling, and Undo are future roadmap capabilities.
 
 ## Next task — exactly one
 

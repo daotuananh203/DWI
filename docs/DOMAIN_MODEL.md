@@ -22,6 +22,33 @@ A structured observation supporting or limiting a conclusion. Evidence should id
 
 An auditable record of the ordered rules and evidence that produced a result. A trace must make it possible to explain both the selected label and the gates that prevented a less cautious label.
 
+### CleanupPlan
+
+An immutable, engine-generated proposed action set. A plan contains stable
+plan-item identifiers and the exact findings/evidence snapshot from which it
+was derived. A plan is not an authorization to execute.
+
+### PlanValidation
+
+A deterministic result of rechecking a `CleanupPlan` against the current
+filesystem and evidence immediately before execution. Validation may preserve
+or reduce operational eligibility, but it may never make execution less
+conservative. A stale or materially changed plan is blocked or invalidated.
+
+### ExecutionAuthorization
+
+The final engine-controlled permission state for executing a validated plan.
+It is separate from both intrinsic `RiskLabel` and current
+`ActionEligibility`; `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not
+automatically authorize execution.
+
+### CleanupExecutor, Trash/Quarantine, and Journal/Undo
+
+The executor performs only an authorized plan. Initial cleanup releases must
+prefer reversible Trash/Quarantine with an audit journal and Undo/recovery.
+Permanent deletion is an advanced future capability and requires explicit
+authorization and a separate safety design.
+
 ## State dimensions
 
 These dimensions must remain distinct:
@@ -37,6 +64,9 @@ These dimensions must remain distinct:
 - **RiskLabel:** the Safety Policy's intrinsic caution conclusion about reclaiming the artifact under the evaluated evidence. `REGENERATABLE` is a policy conclusion, not a copy of `RegenerabilityState`.
 - **ActionEligibility:** whether an operation is blocked, requires review, or is eligible for a future explicitly authorized action.
 - **ReclaimPriority:** independent prioritization based on size, staleness, regeneration cost, and other value signals. It is not a safety score.
+- **CleanupPlan:** immutable engine-generated proposed action set, never an arbitrary path list supplied by an interface.
+- **PlanValidation:** immediate deterministic revalidation of a plan against current filesystem/evidence.
+- **ExecutionAuthorization:** final permission state after policy and plan validation; it is not implied by a risk label or action eligibility.
 
 ## Risk labels
 
@@ -52,6 +82,11 @@ Labels are ordered from less to more cautious:
 Risk labels are not current activity. A confirmed reference or active consumer is a hard gate: the minimum `RiskLabel` is `REVIEW_REQUIRED`, so it cannot be `SAFE` or `REGENERATABLE`. An artifact may have `RegenerabilityState = REPRODUCIBLE` while its `RiskLabel = REVIEW_REQUIRED` because it is referenced, active, or otherwise fails a safety gate. `ActionEligibility` may still be `BLOCKED` independently.
 
 `NEVER_DELETE` is protection semantics, not reclaim eligibility. In particular, Git metadata is observed for context and protection and is excluded from the cleanup-candidate pipeline.
+
+`SAFE` does not automatically mean executable, and
+`ELIGIBLE_FOR_EXPLICIT_ACTION` does not automatically mean executable. A
+cleanup operation additionally requires an immutable engine-generated plan,
+successful immediate `PlanValidation`, and `ExecutionAuthorization`.
 
 ## Evidence semantics
 
@@ -87,3 +122,26 @@ ObservedNode
 ```
 
 Detectors may contribute evidence and artifact interpretations. They must not directly assign the final risk label.
+
+## Cleanup lifecycle semantics
+
+The cleanup lifecycle is intentionally downstream of safety analysis:
+
+```text
+analysis result
+  -> immutable CleanupPlan
+  -> immediate PlanValidation
+  -> ExecutionAuthorization
+  -> authorized CleanupExecutor
+  -> Trash/Quarantine
+  -> audit Journal + Undo/recovery
+```
+
+Agent and MCP interfaces must identify cleanup targets only through
+engine-generated `plan_id` and plan-item identifiers. They must never submit an
+arbitrary filesystem path as a cleanup target.
+
+Presentation localization is not part of the domain meaning. Human-facing
+English and Vietnamese text may vary, but machine-readable JSON keys, enums,
+`RiskLabel` values, MCP tool names, API/schema identifiers, and internal
+evidence keys remain stable English identifiers.
