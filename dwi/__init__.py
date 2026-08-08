@@ -39,6 +39,12 @@ from .fixtures import (
     initial_artifact_fixtures,
 )
 from .pycache import PycacheDetection, PycacheInterpretation, inspect_pycache, interpret_pycache
+from .pytest_cache import (
+    PytestCacheDetection,
+    PytestCacheInterpretation,
+    inspect_pytest_cache,
+    interpret_pytest_cache,
+)
 
 __all__ = [
     "ActionEligibility",
@@ -80,4 +86,8 @@ __all__ = [
     "PycacheInterpretation",
     "inspect_pycache",
     "interpret_pycache",
+    "PytestCacheDetection",
+    "PytestCacheInterpretation",
+    "inspect_pytest_cache",
+    "interpret_pytest_cache",
 ]

@@ -46,6 +46,10 @@ Future detectors should record the exact path, observed object type, marker evid
 
 For the first `__pycache__` detector, the contract additionally records the exact directory-name observation. This is raw path evidence used to prevent a name-only match from establishing artifact identity; it is not a domain-state or risk conclusion. An embedded source filename reference is recorded separately from recreation-input availability; the former does not prove that the latter is present.
 
+The `.pytest_cache` detector likewise records its exact directory name separately from raw `CACHEDIR.TAG`, `README.md`, and direct layout observations. Marker names alone do not establish pytest provenance or a safety conclusion.
+
+The `.pytest_cache` detector likewise records its exact directory name separately from raw `CACHEDIR.TAG`, `README.md`, and direct layout observations. Marker names alone do not establish pytest provenance or a safety conclusion.
+
 ## Open catalog questions
 
 - Which exact lockfile formats and package-manager stores are in MVP scope?

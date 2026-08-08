@@ -11,12 +11,25 @@ from __future__ import annotations
 import importlib.util
 import marshal
 import os
-import stat
 from dataclasses import dataclass
 from pathlib import Path
 from types import CodeType
 
 from .contracts import ArtifactKind, EvidenceAssessment, contract_for
+from .detector_support import (
+    confirmed_absence_meets,
+    confirmed_absent_evidence,
+    failed_evidence,
+    key_conflicts,
+    key_has_uncertainty,
+    make_evidence,
+    not_observed_evidence,
+    observed_evidence,
+    observed_node_kind as _node_kind,
+    positive_evidence_meets,
+    reachability_from_evidence,
+    unknown_evidence,
+)
 from .domain import (
     ActivityState,
     Confidence,
@@ -78,11 +91,11 @@ def _evidence(
     confidence: Confidence,
     value: str | None = None,
 ) -> Evidence:
-    return Evidence(
-        key=key,
-        source=_DETECTOR_SOURCE,
-        description=description,
-        observation_status=status,
+    return make_evidence(
+        _DETECTOR_SOURCE,
+        key,
+        description,
+        status=status,
         polarity=polarity,
         confidence=confidence,
         value=value,
@@ -90,71 +103,29 @@ def _evidence(
 
 
 def _observed(key: str, description: str, *, confidence: Confidence = Confidence.HIGH, value: str | None = None) -> Evidence:
-    return _evidence(
+    return observed_evidence(
+        _DETECTOR_SOURCE,
         key,
         description,
-        status=ObservationStatus.OBSERVED,
-        polarity=EvidencePolarity.SUPPORTS,
         confidence=confidence,
         value=value,
     )
 
 
 def _not_observed(key: str, description: str) -> Evidence:
-    return _evidence(
-        key,
-        description,
-        status=ObservationStatus.NOT_OBSERVED,
-        polarity=EvidencePolarity.UNKNOWN,
-        confidence=Confidence.UNKNOWN,
-    )
+    return not_observed_evidence(_DETECTOR_SOURCE, key, description)
 
 
 def _confirmed_absent(key: str, description: str) -> Evidence:
-    return _evidence(
-        key,
-        description,
-        status=ObservationStatus.CONFIRMED_ABSENT,
-        polarity=EvidencePolarity.CONTRADICTS,
-        confidence=Confidence.HIGH,
-    )
+    return confirmed_absent_evidence(_DETECTOR_SOURCE, key, description)
 
 
 def _unknown(key: str, description: str) -> Evidence:
-    return _evidence(
-        key,
-        description,
-        status=ObservationStatus.UNKNOWN,
-        polarity=EvidencePolarity.UNKNOWN,
-        confidence=Confidence.UNKNOWN,
-    )
+    return unknown_evidence(_DETECTOR_SOURCE, key, description)
 
 
 def _failed(key: str, description: str) -> Evidence:
-    return _evidence(
-        key,
-        description,
-        status=ObservationStatus.FAILED,
-        polarity=EvidencePolarity.UNKNOWN,
-        confidence=Confidence.UNKNOWN,
-    )
-
-
-def _node_kind(path: Path) -> NodeKind:
-    try:
-        metadata = os.lstat(path)
-    except (FileNotFoundError, NotADirectoryError):
-        return NodeKind.UNKNOWN
-    except (PermissionError, OSError):
-        return NodeKind.INACCESSIBLE
-
-    if stat.S_ISLNK(metadata.st_mode):
-        return NodeKind.SYMLINK
-    if stat.S_ISDIR(metadata.st_mode):
-        return NodeKind.DIRECTORY
-    if stat.S_ISREG(metadata.st_mode):
-        return NodeKind.FILE
-    return NodeKind.UNKNOWN
+    return failed_evidence(_DETECTOR_SOURCE, key, description)
 
 
 def _read_pyc(data: bytes) -> tuple[str | None, str]:
@@ -471,31 +442,15 @@ def _meets(
     key: str,
     requirements: dict[str, EvidenceRequirement],
 ) -> bool:
-    return any(
-        item.polarity is EvidencePolarity.SUPPORTS
-        and item.meets_requirement(requirements[key])
-        for item in detection.observations
-        if item.key == key
-    )
+    return positive_evidence_meets(detection.observations, key, requirements)
 
 
 def _key_conflicts(detection: PycacheDetection, key: str) -> bool:
-    items = [item for item in detection.observations if item.key == key]
-    if any(item.polarity is EvidencePolarity.CONFLICTING for item in items):
-        return True
-    polarities = {item.polarity for item in items}
-    return {
-        EvidencePolarity.SUPPORTS,
-        EvidencePolarity.CONTRADICTS,
-    }.issubset(polarities)
+    return key_conflicts(detection.observations, key)
 
 
 def _key_has_uncertainty(detection: PycacheDetection, key: str) -> bool:
-    return any(
-        item.is_uncertain
-        for item in detection.observations
-        if item.key == key
-    )
+    return key_has_uncertainty(detection.observations, key)
 
 
 def interpret_pycache(detection: PycacheDetection) -> PycacheInterpretation:
@@ -527,13 +482,10 @@ def interpret_pycache(detection: PycacheDetection) -> PycacheInterpretation:
         detection,
         "recreation_input_availability_observation",
     )
-    availability_confirmed_absent = any(
-        item.key == "recreation_input_availability_observation"
-        and item.observation_status is ObservationStatus.CONFIRMED_ABSENT
-        and item.meets_requirement(
-            requirements["recreation_input_availability_observation"]
-        )
-        for item in detection.observations
+    availability_confirmed_absent = confirmed_absence_meets(
+        detection.observations,
+        "recreation_input_availability_observation",
+        requirements,
     )
     provenance = (
         Provenance(
@@ -562,19 +514,7 @@ def interpret_pycache(detection: PycacheDetection) -> PycacheInterpretation:
         regenerability = RegenerabilityState.UNKNOWN
         regeneration_cost = RegenerationCost.UNKNOWN
 
-    if _key_conflicts(detection, "reference_check_observation"):
-        reachability = ReachabilityState.CONFLICTING
-    elif _meets(detection, "reference_check_observation", requirements):
-        reachability = ReachabilityState.CONFIRMED_REFERENCED
-    elif any(
-        item.key == "reference_check_observation"
-        and item.observation_status is ObservationStatus.CONFIRMED_ABSENT
-        and item.meets_requirement(requirements["reference_check_observation"])
-        for item in detection.observations
-    ):
-        reachability = ReachabilityState.CONFIRMED_UNREFERENCED
-    else:
-        reachability = ReachabilityState.UNKNOWN
+    reachability = reachability_from_evidence(detection.observations, requirements)
 
     activity = (
         ActivityState.CONFLICTING

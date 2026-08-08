@@ -100,7 +100,11 @@ _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
         "python_bytecode_marker",
         "python_source_reference_observation",
     ),
-    ArtifactKind.PYTEST_CACHE: ("pytest_cache_marker", "cache_layout_observation"),
+    ArtifactKind.PYTEST_CACHE: (
+        "pytest_cache_directory_name_observation",
+        "pytest_cache_marker",
+        "cache_layout_observation",
+    ),
     ArtifactKind.MYPY_CACHE: ("mypy_cache_marker", "cache_layout_observation"),
     ArtifactKind.RUFF_CACHE: ("ruff_cache_marker", "cache_layout_observation"),
     ArtifactKind.PYTHON_VENV: (
