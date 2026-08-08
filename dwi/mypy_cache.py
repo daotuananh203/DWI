@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import ArtifactKind, EvidenceAssessment, contract_for
+from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
     confirmed_absent_evidence,
     failed_evidence,
@@ -32,7 +32,6 @@ from .domain import (
     Confidence,
     Evidence,
     EvidenceBundle,
-    EvidenceRequirement,
     NodeKind,
     ObservedNode,
     ProtectionClass,
@@ -450,17 +449,10 @@ def inspect_mypy_cache(path: str | os.PathLike[str]) -> MypyCacheDetection:
     )
 
 
-def _requirements_by_key() -> dict[str, EvidenceRequirement]:
-    return {
-        requirement.key: requirement
-        for requirement in contract_for(ArtifactKind.MYPY_CACHE).requirements
-    }
-
-
 def interpret_mypy_cache(detection: MypyCacheDetection) -> MypyCacheInterpretation:
     """Interpret structural mypy evidence into separate domain dimensions."""
 
-    requirements = _requirements_by_key()
+    requirements = requirements_by_key(ArtifactKind.MYPY_CACHE)
     observations = detection.observations
     structural_keys = (
         "mypy_cache_directory_name_observation",

@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import ArtifactKind, EvidenceAssessment, contract_for
+from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
     confirmed_absent_evidence,
     failed_evidence,
@@ -24,7 +24,6 @@ from .domain import (
     Confidence,
     Evidence,
     EvidenceBundle,
-    EvidenceRequirement,
     NodeKind,
     ObservedNode,
     ProtectionClass,
@@ -443,17 +442,10 @@ def inspect_pytest_cache(path: str | os.PathLike[str]) -> PytestCacheDetection:
     )
 
 
-def _requirements_by_key() -> dict[str, EvidenceRequirement]:
-    return {
-        requirement.key: requirement
-        for requirement in contract_for(ArtifactKind.PYTEST_CACHE).requirements
-    }
-
-
 def interpret_pytest_cache(detection: PytestCacheDetection) -> PytestCacheInterpretation:
     """Interpret structural pytest-cache evidence into separate domain dimensions."""
 
-    requirements = _requirements_by_key()
+    requirements = requirements_by_key(ArtifactKind.PYTEST_CACHE)
     observations = detection.observations
     name_valid = positive_evidence_meets(
         observations,

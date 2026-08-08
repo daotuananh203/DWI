@@ -176,5 +176,14 @@ def contract_for(artifact: ArtifactKind) -> EvidenceContract:
     return _CONTRACTS[artifact]
 
 
+def requirements_by_key(artifact: ArtifactKind) -> dict[str, EvidenceRequirement]:
+    """Return the contract requirements keyed for policy interpretation."""
+
+    return {
+        requirement.key: requirement
+        for requirement in contract_for(artifact).requirements
+    }
+
+
 def all_contracts() -> tuple[EvidenceContract, ...]:
     return tuple(_CONTRACTS[artifact] for artifact in ArtifactKind)

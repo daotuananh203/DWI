@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import CodeType
 
-from .contracts import ArtifactKind, EvidenceAssessment, contract_for
+from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
     confirmed_absence_meets,
     confirmed_absent_evidence,
@@ -430,13 +430,6 @@ def inspect_pycache(path: str | os.PathLike[str]) -> PycacheDetection:
     )
 
 
-def _requirements_by_key() -> dict[str, EvidenceRequirement]:
-    return {
-        requirement.key: requirement
-        for requirement in contract_for(ArtifactKind.PYCACHE).requirements
-    }
-
-
 def _meets(
     detection: PycacheDetection,
     key: str,
@@ -456,7 +449,7 @@ def _key_has_uncertainty(detection: PycacheDetection, key: str) -> bool:
 def interpret_pycache(detection: PycacheDetection) -> PycacheInterpretation:
     """Interpret structural pycache evidence into separate domain dimensions."""
 
-    requirements = _requirements_by_key()
+    requirements = requirements_by_key(ArtifactKind.PYCACHE)
     name_valid = _meets(detection, "pycache_directory_name_observation", requirements)
     marker_valid = _meets(detection, "python_bytecode_marker", requirements)
     source_valid = _meets(detection, "python_source_reference_observation", requirements)

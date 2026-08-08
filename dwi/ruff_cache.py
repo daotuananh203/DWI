@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .contracts import ArtifactKind, EvidenceAssessment, contract_for
+from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
     confirmed_absent_evidence,
     failed_evidence,
@@ -433,13 +433,6 @@ def inspect_ruff_cache(path: str | os.PathLike[str]) -> RuffCacheDetection:
     )
 
 
-def _requirements_by_key() -> dict[str, EvidenceRequirement]:
-    return {
-        requirement.key: requirement
-        for requirement in contract_for(ArtifactKind.RUFF_CACHE).requirements
-    }
-
-
 def _has_weak_evidence(
     observations: tuple[Evidence, ...],
     key: str,
@@ -455,7 +448,7 @@ def _has_weak_evidence(
 def interpret_ruff_cache(detection: RuffCacheDetection) -> RuffCacheInterpretation:
     """Interpret structural Ruff evidence into separate domain dimensions."""
 
-    requirements = _requirements_by_key()
+    requirements = requirements_by_key(ArtifactKind.RUFF_CACHE)
     observations = detection.observations
     structural_keys = (
         "ruff_cache_directory_name_observation",
