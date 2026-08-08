@@ -17,6 +17,7 @@ from types import CodeType
 
 from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
+    activity_from_evidence,
     confirmed_absence_meets,
     confirmed_absent_evidence,
     failed_evidence,
@@ -27,6 +28,7 @@ from .detector_support import (
     observed_evidence,
     observed_node_kind as _node_kind,
     positive_evidence_meets,
+    protection_from_evidence,
     reachability_from_evidence,
     unknown_evidence,
 )
@@ -509,16 +511,8 @@ def interpret_pycache(detection: PycacheDetection) -> PycacheInterpretation:
 
     reachability = reachability_from_evidence(detection.observations, requirements)
 
-    activity = (
-        ActivityState.CONFLICTING
-        if _key_conflicts(detection, "runtime_activity_observation")
-        else ActivityState.UNKNOWN
-    )
-    protection = (
-        ProtectionClass.CONFLICTING
-        if _key_conflicts(detection, "protection_indicator_observation")
-        else ProtectionClass.UNKNOWN
-    )
+    activity = activity_from_evidence(detection.observations)
+    protection = protection_from_evidence(detection.observations)
 
     return PycacheInterpretation(
         provenance=provenance,

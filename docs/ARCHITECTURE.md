@@ -36,6 +36,17 @@ The first implementation should use simple typed Python modules. It must not beg
 - **Candidate selection:** prevents arbitrary files, source trees, and project roots from entering the cleanup-analysis path.
 - **Git boundary:** observes `.git` directories and `.git` files for protection/context, but excludes them from `CleanupCandidate` inputs. `NEVER_DELETE` is a protection outcome, not reclaim eligibility.
 - **Artifact analysis:** interprets evidence for Python, Node.js, and minimal Git context.
+
+The current bounded artifact layer has explicit analyzers for `__pycache__`,
+`.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.venv`/`venv`, `node_modules`,
+`dist`, `build`, and `.next`. Each analyzer accepts one candidate path, records
+raw observations, and returns a separate domain interpretation. The `.venv`
+analyzer does not inspect parent project files. Node analyzers do not perform
+package-manager-wide reachability or cross-project discovery.
+
+The single-candidate dispatcher uses an explicit artifact-name decision table.
+It is not a recursive scanner, registry, plugin mechanism, or dynamic discovery
+system; an unknown basename returns no analysis result.
 - **Safety Policy:** applies ordered gates and produces the risk label, action eligibility, and rule trace.
 - **Reclaim ranking:** estimates reclaim priority independently from safety.
 - **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions.

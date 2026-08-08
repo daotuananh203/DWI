@@ -12,7 +12,11 @@ DWI is intended to answer:
 
 ## Current status
 
-This repository currently contains the project constitution and domain specifications only. The MVP is analysis-and-reporting-only. It does not delete files, call an LLM, access a cloud service, or provide a UI.
+The typed domain model, detector-neutral evidence contracts, four cache detectors,
+the bounded `.venv` and Node.js artifact analyzers, and an explicit single-path
+dispatcher are implemented. The MVP remains analysis-and-reporting-only. It does
+not recursively scan workspaces, delete files, call an LLM, access a cloud
+service, or provide a UI.
 
 Read the documents in this order:
 
@@ -31,4 +35,4 @@ DWI must work without an AI provider. Deterministic evidence collection and orde
 
 Artifact names never map directly to risk labels. A low-risk label is available only after sufficient evidence passes the ordered safety gates. Runtime uncertainty defaults to `REVIEW_REQUIRED`.
 
-The first implementation task is recorded in [TASKS.md](TASKS.md). No implementation work is part of this initialization.
+The current bounded implementation boundary and exactly one next task are recorded in [TASKS.md](TASKS.md).

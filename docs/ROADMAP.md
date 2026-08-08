@@ -9,6 +9,15 @@
 - Initial Python, Node.js, and Git evidence catalog.
 - Adversarial case catalog.
 
+## Completed bounded analysis layer
+
+- Typed immutable domain model and detector-neutral evidence contracts.
+- Read-only analyzers for the four initial Python caches.
+- Read-only `.venv` / `venv` analysis with a candidate-local boundary.
+- Read-only Node.js analysis for `node_modules`, `dist`, `build`, and `.next`.
+- Explicit single-candidate dispatcher with no recursive discovery.
+- Synthetic and temporary-directory adversarial tests for the bounded analyzers.
+
 ## MVP
 
 The MVP remains Windows-only and analysis/reporting-only:

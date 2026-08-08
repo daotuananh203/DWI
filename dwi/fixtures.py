@@ -114,8 +114,17 @@ def _normal_fixture(artifact: ArtifactKind) -> SyntheticArtifactFixture:
             ArtifactKind.MYPY_CACHE,
             ArtifactKind.RUFF_CACHE,
         }
+        else RegenerabilityState.UNKNOWN
+        if artifact in {ArtifactKind.DIST, ArtifactKind.BUILD}
         else RegenerabilityState.CONDITIONALLY_REPRODUCIBLE
     )
+    unknown_cost_artifacts = {
+        ArtifactKind.PYTHON_VENV,
+        ArtifactKind.NODE_MODULES,
+        ArtifactKind.DIST,
+        ArtifactKind.BUILD,
+        ArtifactKind.NEXT_BUILD,
+    }
     expected = ExpectedDomainInterpretation(
         provenance=Provenance(
             ecosystem="python" if is_python else "node",
@@ -124,9 +133,9 @@ def _normal_fixture(artifact: ArtifactKind) -> SyntheticArtifactFixture:
         ),
         regenerability=expected_regenerability,
         regeneration_cost=(
-            RegenerationCost.LOW
-            if artifact not in {ArtifactKind.PYTHON_VENV, ArtifactKind.NODE_MODULES}
-            else RegenerationCost.MEDIUM
+            RegenerationCost.UNKNOWN
+            if artifact in unknown_cost_artifacts
+            else RegenerationCost.LOW
         ),
         reachability=ReachabilityState.CONFIRMED_UNREFERENCED,
         activity=ActivityState.INACTIVE,

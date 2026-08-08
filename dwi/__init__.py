@@ -31,6 +31,7 @@ from .contracts import (
     EvidenceContract,
     all_contracts,
     contract_for,
+    requirements_by_key,
 )
 from .fixtures import (
     ExpectedDomainInterpretation,
@@ -57,6 +58,31 @@ from .ruff_cache import (
     inspect_ruff_cache,
     interpret_ruff_cache,
 )
+from .venv import (
+    PythonVenvDetection,
+    PythonVenvInterpretation,
+    inspect_python_venv,
+    interpret_python_venv,
+)
+from .node_artifacts import (
+    BuildArtifactDetection,
+    BuildArtifactInterpretation,
+    NextBuildDetection,
+    NextBuildInterpretation,
+    NodeArtifactDetection,
+    NodeArtifactInterpretation,
+    NodeModulesDetection,
+    NodeModulesInterpretation,
+    inspect_build,
+    inspect_dist,
+    inspect_next_build,
+    inspect_node_modules,
+    interpret_build,
+    interpret_dist,
+    interpret_next_build,
+    interpret_node_modules,
+)
+from .dispatcher import AnalysisResult, analyze_candidate, dispatch_analysis
 
 __all__ = [
     "ActionEligibility",
@@ -90,6 +116,7 @@ __all__ = [
     "EvidenceContract",
     "all_contracts",
     "contract_for",
+    "requirements_by_key",
     "ExpectedDomainInterpretation",
     "SyntheticArtifactFixture",
     "fixture_by_id",
@@ -110,4 +137,27 @@ __all__ = [
     "RuffCacheInterpretation",
     "inspect_ruff_cache",
     "interpret_ruff_cache",
+    "PythonVenvDetection",
+    "PythonVenvInterpretation",
+    "inspect_python_venv",
+    "interpret_python_venv",
+    "NodeArtifactDetection",
+    "NodeArtifactInterpretation",
+    "NodeModulesDetection",
+    "NodeModulesInterpretation",
+    "BuildArtifactDetection",
+    "BuildArtifactInterpretation",
+    "NextBuildDetection",
+    "NextBuildInterpretation",
+    "inspect_node_modules",
+    "interpret_node_modules",
+    "inspect_dist",
+    "interpret_dist",
+    "inspect_build",
+    "interpret_build",
+    "inspect_next_build",
+    "interpret_next_build",
+    "AnalysisResult",
+    "analyze_candidate",
+    "dispatch_analysis",
 ]

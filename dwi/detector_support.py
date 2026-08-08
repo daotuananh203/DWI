@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 from .domain import (
+    ActivityState,
     Confidence,
     Evidence,
     EvidencePolarity,
     EvidenceRequirement,
     NodeKind,
     ObservationStatus,
+    ProtectionClass,
     ReachabilityState,
 )
 
@@ -99,6 +101,48 @@ def failed_evidence(source: str, key: str, description: str) -> Evidence:
         status=ObservationStatus.FAILED,
         polarity=EvidencePolarity.UNKNOWN,
         confidence=Confidence.UNKNOWN,
+    )
+
+
+def context_unknown_evidence(source: str) -> tuple[Evidence, ...]:
+    """Record safety context not inspected by a bounded single-path detector."""
+
+    return (
+        unknown_evidence(
+            source,
+            "reference_check_observation",
+            "This bounded detector does not inspect references or consumers.",
+        ),
+        unknown_evidence(
+            source,
+            "runtime_activity_observation",
+            "This bounded detector does not inspect running processes or runtime activity.",
+        ),
+        unknown_evidence(
+            source,
+            "protection_indicator_observation",
+            "Protection context is not established by this bounded detector.",
+        ),
+    )
+
+
+def activity_from_evidence(observations: Iterable[Evidence]) -> ActivityState:
+    """Interpret only the activity dimension from detector-neutral evidence."""
+
+    return (
+        ActivityState.CONFLICTING
+        if key_conflicts(observations, "runtime_activity_observation")
+        else ActivityState.UNKNOWN
+    )
+
+
+def protection_from_evidence(observations: Iterable[Evidence]) -> ProtectionClass:
+    """Interpret only the protection dimension from detector-neutral evidence."""
+
+    return (
+        ProtectionClass.CONFLICTING
+        if key_conflicts(observations, "protection_indicator_observation")
+        else ProtectionClass.UNKNOWN
     )
 
 

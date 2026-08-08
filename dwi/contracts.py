@@ -116,26 +116,31 @@ _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
         "cache_layout_observation",
     ),
     ArtifactKind.PYTHON_VENV: (
+        "python_venv_directory_name_observation",
         "pyvenv_cfg_marker",
         "interpreter_layout_observation",
         "project_metadata_observation",
     ),
     ArtifactKind.NODE_MODULES: (
+        "node_modules_directory_name_observation",
         "package_manifest_observation",
         "dependency_tree_observation",
         "package_manager_indicator",
     ),
     ArtifactKind.DIST: (
+        "dist_directory_name_observation",
         "build_output_marker",
         "build_configuration_observation",
         "source_input_observation",
     ),
     ArtifactKind.BUILD: (
+        "build_directory_name_observation",
         "build_output_marker",
         "build_configuration_observation",
         "source_input_observation",
     ),
     ArtifactKind.NEXT_BUILD: (
+        "next_build_directory_name_observation",
         "next_metadata_marker",
         "build_output_marker",
         "project_configuration_observation",
@@ -165,6 +170,10 @@ _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
             "A source reference observation is distinct from recreation-input availability evidence.",
             "MYPY_CACHE includes an exact directory-name observation and requires structural cache evidence; a name-only match is insufficient.",
             "RUFF_CACHE includes an exact directory-name observation and requires both supported root markers and versioned cache layout evidence.",
+            "PYTHON_VENV records exact-name, pyvenv.cfg, and Windows Scripts/python.exe observations; project context outside the candidate is not inspected.",
+            "NODE_MODULES uses bounded package-tree and local package-manager marker observations; package-manager-wide reachability is not inspected.",
+            "DIST and BUILD require bounded output and build-metadata observations; source inputs outside the candidate are not inspected.",
+            "NEXT_BUILD requires bounded Next.js metadata, output, and project-configuration observations; project context outside the candidate is not inspected.",
             "Confirmed references, uncertainty, or conflicts must fail closed in policy evaluation.",
         ),
     )

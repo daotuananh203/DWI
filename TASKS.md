@@ -2,22 +2,25 @@
 
 ## Current state
 
-The documentation-first initialization is complete. There is no scanner, detector, CLI, rule engine, or application code yet.
+The typed domain model, detector-neutral contracts, four Python cache analyzers,
+the bounded `.venv` analyzer, bounded Node.js analyzers for `node_modules`,
+`dist`, `build`, and `.next`, and an explicit single-candidate dispatcher are
+implemented and covered by deterministic synthetic/tempdir tests.
+
+There is still no recursive workspace scanner, disk-wide discovery, CLI, UI,
+MCP adapter, LLM integration, cleanup execution, or dynamic plugin system.
 
 ## Next task — exactly one
 
-- [ ] Implement the typed domain model and evidence schema skeleton, with unit tests for conservative defaults, monotonic risk escalation, and separation of intrinsic risk from current activity.
+- [ ] Add an explicit candidate-selection and safety-policy adapter for one dispatcher result.
 
 ### Acceptance criteria
 
-- The model represents observed nodes, cleanup candidates, evidence status, provenance, regenerability, reachability, activity, protection, risk, action eligibility, reclaim priority, and rule traces.
-- Unknown or failed evidence cannot produce `SAFE`.
-- Confirmed references or active consumers impose a minimum `REVIEW_REQUIRED` label and cannot produce `SAFE` or `REGENERATABLE`.
-- `.git` directories and `.git` files remain `ObservedNode` protection/context only and cannot become `CleanupCandidate` inputs; `NEVER_DELETE` is not reclaim eligibility.
-- `RegenerabilityState` records reproducibility evidence/property separately from `RiskLabel.REGENERATABLE`; verified regenerability alone cannot determine the risk label.
-- Risk labels can only escalate during one evaluation.
-- Active runtime state can block action without changing the artifact's intrinsic risk label.
-- Tests are deterministic and do not inspect or modify a user's real filesystem.
-- No scanner, detector implementation, CLI, deletion behavior, or new external dependency is added.
+- Consume exactly one `AnalysisResult` and explicit candidate-selection evidence.
+- Preserve observations → evidence → interpretation → domain states → Safety Policy.
+- Never assign a risk label inside a detector or from an artifact name.
+- Preserve confirmed-reachability, active-runtime, protection, uncertainty, conflict, and monotonic-risk gates.
+- Keep `RegenerabilityState`, `RiskLabel`, `ActivityState`, `ActionEligibility`, and `ReclaimPriority` separate.
+- Use synthetic inputs only; do not add recursive scanning, CLI, cleanup, UI, MCP, LLM, plugins, or dependencies.
 
 Future work is described in [docs/ROADMAP.md](docs/ROADMAP.md), but it is not authorized by this task list.

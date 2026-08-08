@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .contracts import ArtifactKind, EvidenceAssessment, contract_for, requirements_by_key
 from .detector_support import (
+    activity_from_evidence,
     confirmed_absent_evidence,
     failed_evidence,
     key_conflicts,
@@ -24,6 +25,7 @@ from .detector_support import (
     observed_evidence,
     observed_node_kind,
     positive_evidence_meets,
+    protection_from_evidence,
     reachability_from_evidence,
     unknown_evidence,
 )
@@ -493,14 +495,6 @@ def interpret_mypy_cache(detection: MypyCacheDetection) -> MypyCacheInterpretati
         regenerability=regenerability,
         regeneration_cost=RegenerationCost.UNKNOWN,
         reachability=reachability_from_evidence(observations, requirements),
-        activity=(
-            ActivityState.CONFLICTING
-            if key_conflicts(observations, "runtime_activity_observation")
-            else ActivityState.UNKNOWN
-        ),
-        protection=(
-            ProtectionClass.CONFLICTING
-            if key_conflicts(observations, "protection_indicator_observation")
-            else ProtectionClass.UNKNOWN
-        ),
+        activity=activity_from_evidence(observations),
+        protection=protection_from_evidence(observations),
     )
