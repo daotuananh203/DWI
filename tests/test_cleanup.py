@@ -114,7 +114,7 @@ class CleanupContractTests(unittest.TestCase):
         return Finding(ArtifactKind.PYTEST_CACHE, path, bundle, interpretation, selection, decision, SizeObservation(10, True))
 
     def _identity(self, inode: int = 10) -> FilesystemIdentity:
-        return FilesystemIdentity(1, inode, NodeKind.DIRECTORY, False)
+        return FilesystemIdentity(1, inode, NodeKind.DIRECTORY, False, "C:\\workspace\\.pytest_cache")
 
     def _plan(self, finding: Finding | None = None, context: TrustedScanContext | None = None):
         finding = finding or self._finding()
@@ -353,6 +353,32 @@ class CleanupContractTests(unittest.TestCase):
             files_observed=0,
         )
         self.assertEqual(scan_completeness_from_system_scan(scan), ScanCompleteness.PARTIAL)
+
+    def test_legacy_scanned_root_status_is_not_complete_for_planning(self) -> None:
+        scan = SystemScan(
+            requested_roots=("C:\\workspace",),
+            root_observations=(RootObservation(
+                "C:\\workspace", RootScope.ADDITIONAL_LOCAL, "root", RootBoundary.LOCAL_DIRECTORY,
+                RootStatus.SCANNED, "legacy synthetic status",
+            ),),
+            workspace_findings=(),
+            global_storage_findings=(),
+            git_observations=(),
+            observation_failures=(),
+            ambiguous_boundaries=(),
+            termination=ScanTermination.COMPLETED,
+            nodes_observed=1,
+            files_observed=0,
+        )
+        context = scan_context_from_system_scan(scan)
+        self.assertEqual(context.completeness, ScanCompleteness.PARTIAL)
+        plan = create_cleanup_plan(
+            (self._finding(),),
+            filesystem_identities={"C:\\workspace\\.pytest_cache": self._identity()},
+            scan_context=context,
+            approved_root=context.approved_roots[0],
+        )
+        self.assertFalse(plan.items)
 
     def test_global_failure_evidence_cannot_become_complete_context(self) -> None:
         context = self._context(failures=("global evidence failed",))

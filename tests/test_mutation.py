@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from dwi import (
@@ -49,6 +50,7 @@ from dwi import (
 from dwi.cleanup import _digest
 from dwi.mutation import (
     AuditJournal,
+    ApprovedMutationRoot,
     JournalCorruptionError,
     JournalEntry,
     JournalError,
@@ -56,6 +58,11 @@ from dwi.mutation import (
     _canonical_json,
     _entry_hash,
     _entry_payload,
+    _authoritative_path,
+    AuthoritativePath,
+    _is_protected_authoritative_path,
+    _verify_approved_local_root,
+    approve_local_mutation_root,
     create_audit_journal,
     create_disposable_root,
     create_quarantine_root,
@@ -135,7 +142,9 @@ class MutationPrimitiveTests(unittest.TestCase):
 
     def _identity(self, path: Path) -> FilesystemIdentity:
         metadata = os.lstat(path)
-        return FilesystemIdentity(metadata.st_dev, metadata.st_ino, NodeKind.DIRECTORY, False)
+        authority = _authoritative_path(str(path))
+        self.assertIsNotNone(authority)
+        return FilesystemIdentity(metadata.st_dev, metadata.st_ino, NodeKind.DIRECTORY, False, authority.final_path)
 
     def _plan(self, paths: tuple[Path, ...] | None = None):
         paths = paths or (self.workspace / ".pytest_cache",)
@@ -191,12 +200,103 @@ class MutationPrimitiveTests(unittest.TestCase):
         destination = Path(result.records[0].metadata.quarantine_path)
         self.assertFalse(Path(result.records[0].metadata.original_path).exists())
         self.assertTrue(destination.exists())
-        self.assertEqual([entry.status for entry in self.journal.read_entries()], [QuarantineState.PLANNED, QuarantineState.QUARANTINING, QuarantineState.QUARANTINED])
+        self.assertEqual([entry.status for entry in self.journal.read_entries()], [
+            QuarantineState.AUTHORIZATION_CLAIMED,
+            QuarantineState.PLANNED,
+            QuarantineState.QUARANTINING,
+            QuarantineState.QUARANTINED,
+        ])
 
         restored = restore_recovery(result.records[0].metadata.recovery_id, self.journal, self.disposable, self.quarantine_root, clock=self.clock)
         self.assertEqual(restored.state, QuarantineState.RESTORED)
         self.assertTrue(Path(result.records[0].metadata.original_path).exists())
         self.assertFalse(destination.exists())
+
+    def test_authorization_item_is_one_shot_and_replay_is_rejected(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        first = quarantine_plan(plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock)
+        self.assertEqual(first.records[0].state, QuarantineState.QUARANTINED)
+        self.assertFalse(authorization.is_authorized)
+        replay = quarantine_plan(plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock)
+        self.assertTrue(replay.failures)
+        self.assertIn("authorization", replay.failures[0].reason)
+
+    def test_concurrent_replay_has_one_winner_and_no_failed_lifecycle_pollution(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = tuple(executor.map(
+                lambda _: quarantine_plan(plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock),
+                (1, 2),
+            ))
+        self.assertEqual(sum(bool(result.records) for result in results), 1)
+        self.assertEqual(sum(bool(result.failures) for result in results), 1)
+        self.assertEqual(
+            [entry.status for entry in self.journal.read_entries()],
+            [
+                QuarantineState.AUTHORIZATION_CLAIMED,
+                QuarantineState.PLANNED,
+                QuarantineState.QUARANTINING,
+                QuarantineState.QUARANTINED,
+            ],
+        )
+
+    def test_claim_failure_does_not_mutate_target_or_append_lifecycle(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        with patch("dwi.mutation.os.open", side_effect=PermissionError("claim denied")):
+            result = quarantine_plan(plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock)
+        self.assertTrue(result.failures)
+        self.assertTrue(Path(plan.items[0].snapshot.path).exists())
+        self.assertEqual(self.journal.read_entries(), ())
+
+    def test_restart_reconciles_claimed_but_not_started_state(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        item = plan.items[0]
+        recovery_id = self._recovery_id(plan, item)
+        destination = os.path.join(self.quarantine_root.path, recovery_id)
+        claimed = self._manual_entry(
+            plan, validation, authorization, item, QuarantineState.AUTHORIZATION_CLAIMED,
+            recovery_id, destination,
+        )
+        self.journal.append(claimed)
+        result = reconcile_pending_operations(self.journal, self.disposable, self.quarantine_root, clock=self.clock)
+        self.assertEqual(result.entries[-1].status, QuarantineState.FAILED)
+        self.assertIn("claimed", result.entries[-1].failure_reason)
+        self.assertTrue(Path(item.snapshot.path).exists())
+
+    def test_approved_local_root_is_engine_bound(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        approved = approve_local_mutation_root(plan, validation, authorization)
+        self.assertIsInstance(approved, ApprovedMutationRoot)
+        self.assertEqual(approved.path, plan.approved_root.path)
+        with self.assertRaises(MutationRefused):
+            with patch("dwi.mutation._windows_drive_type", return_value=4):
+                approve_local_mutation_root(plan, validation, authorization)
+
+    def test_approved_local_root_supports_same_volume_reversible_quarantine(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        approved = approve_local_mutation_root(plan, validation, authorization)
+        local_quarantine = self.workspace / ".dwi-quarantine"
+        local_quarantine.mkdir()
+        quarantine_root = create_quarantine_root(approved)
+        journal = create_audit_journal(approved)
+        result = quarantine_plan(plan, validation, authorization, approved, quarantine_root, journal, clock=self.clock)
+        self.assertEqual(result.failures, ())
+        self.assertEqual(result.records[0].state, QuarantineState.QUARANTINED)
+        restored = restore_recovery(result.records[0].metadata.recovery_id, journal, approved, quarantine_root, clock=self.clock)
+        self.assertEqual(restored.state, QuarantineState.RESTORED)
+
+    def test_approved_local_root_rejects_system_root(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        with patch("dwi.mutation._verify_approved_local_root", side_effect=MutationRefused("protected")):
+            with self.assertRaises(MutationRefused):
+                approve_local_mutation_root(plan, validation, authorization)
 
     def test_unauthorized_and_forged_authorization_do_not_move(self) -> None:
         plan = self._plan()
@@ -318,12 +418,12 @@ class MutationPrimitiveTests(unittest.TestCase):
         validation, authorization = self._authorization(plan)
         quarantine_plan(plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock)
         lines = Path(self.journal.path).read_text(encoding="utf-8").splitlines(keepends=True)
-        self.assertGreaterEqual(len(lines), 3)
+        self.assertGreaterEqual(len(lines), 4)
 
         corruptions = (
-            lines[:1] + [lines[1].replace("quarantining", "tampered", 1)] + lines[2:],
-            [lines[0], lines[2]],
-            [lines[1], lines[0], lines[2]],
+            lines[:2] + [lines[2].replace("quarantining", "tampered", 1)] + lines[3:],
+            [lines[0], lines[1], lines[3]],
+            [lines[1], lines[0], lines[2], lines[3]],
             lines + [lines[0]],
         )
         for corrupted in corruptions:
@@ -332,15 +432,15 @@ class MutationPrimitiveTests(unittest.TestCase):
                 self.journal.read_entries()
             Path(self.journal.path).write_text("".join(lines), encoding="utf-8")
 
-        payload = json.loads(lines[1])
+        payload = json.loads(lines[2])
         payload["previous_record_hash"] = "broken-chain"
-        Path(self.journal.path).write_text(lines[0] + json.dumps(payload) + "\n" + lines[2], encoding="utf-8")
+        Path(self.journal.path).write_text("".join(lines[:2] + [json.dumps(payload) + "\n"] + lines[3:]), encoding="utf-8")
         with self.assertRaises(JournalCorruptionError):
             self.journal.read_entries()
 
-        payload = json.loads(lines[1])
+        payload = json.loads(lines[2])
         payload["sequence"] = 99
-        Path(self.journal.path).write_text(lines[0] + json.dumps(payload) + "\n" + lines[2], encoding="utf-8")
+        Path(self.journal.path).write_text("".join(lines[:2] + [json.dumps(payload) + "\n"] + lines[3:]), encoding="utf-8")
         with self.assertRaises(JournalCorruptionError):
             self.journal.read_entries()
 
@@ -467,6 +567,36 @@ class MutationPrimitiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(Exception):
                 create_disposable_root(directory)
+
+    def test_authoritative_protected_root_matrix_blocks_8dot3_aliases_and_case_variants(self) -> None:
+        protected = ("c:\\windows", "c:\\program files", "c:\\program files (x86)", "c:\\programdata")
+        aliases = (
+            AuthoritativePath(r"C:\\PROGRA~1", r"C:\\Program Files"),
+            AuthoritativePath(r"C:\\PROGRA~2", r"C:\\Program Files (x86)"),
+            AuthoritativePath(r"C:\\PROGRA~3", r"C:\\ProgramData"),
+            AuthoritativePath(r"c:\\WINDOWS", r"C:\\Windows"),
+        )
+        with patch("dwi.mutation._protected_windows_roots", return_value=protected):
+            for authority in aliases:
+                with self.subTest(path=authority.lexical_path):
+                    self.assertTrue(_is_protected_authoritative_path(authority))
+            self.assertFalse(_is_protected_authoritative_path(AuthoritativePath(
+                r"C:\\Users\\Administrator\\Project", r"C:\\Users\\Administrator\\Project",
+            )))
+
+    def test_authoritative_resolution_failure_and_reparse_ambiguity_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("dwi.mutation._windows_final_path", return_value=None):
+                with self.assertRaises(MutationRefused):
+                    _verify_approved_local_root(directory)
+            target = Path(directory) / "target"
+            target.mkdir()
+            link = Path(directory) / "link"
+            try:
+                link.symlink_to(target, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlink creation unavailable")
+            self.assertIsNone(_authoritative_path(str(link)))
 
 
 if __name__ == "__main__":

@@ -41,7 +41,10 @@ class RootScope(str, Enum):
 
 class RootStatus(str, Enum):
     COMPLETE = "complete"
-    SCANNED = "complete"  # compatibility alias for the pre-v0.3 name
+    # Retained for input compatibility only. It is intentionally not an alias
+    # of COMPLETE: callers cannot turn an unclassified "scanned" observation
+    # into trusted mutation completeness.
+    SCANNED = "scanned"
     PARTIAL = "partial"
     DENIED = "denied"
     SKIPPED = "skipped"
@@ -331,7 +334,7 @@ def _gate(request: RootRequest, allow_network: bool) -> tuple[RootObservation, b
         return RootObservation(request.path, request.scope, request.label, boundary, RootStatus.DENIED, "root is a reparse point and was not followed", request.artifact), False
     if not stat.S_ISDIR(metadata.st_mode):
         return RootObservation(request.path, request.scope, request.label, boundary, RootStatus.DENIED, "root is not an ordinary directory", request.artifact), False
-    return RootObservation(request.path, request.scope, request.label, boundary, RootStatus.SCANNED, "approved by the Scan Safety Gate", request.artifact), True
+    return RootObservation(request.path, request.scope, request.label, boundary, RootStatus.COMPLETE, "approved by the Scan Safety Gate", request.artifact), True
 
 
 def scan_system(options: SystemScanOptions | None = None) -> SystemScan:

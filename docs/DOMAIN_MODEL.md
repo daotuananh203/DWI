@@ -36,9 +36,10 @@ incompleteness; it never implies that unvisited paths are absent or safe.
 `RootStatus.COMPLETE` means the approved root traversal and bounded analysis
 completed without recorded root or finding observation failures. `PARTIAL`
 means traversal stopped early or the root produced incomplete/failed evidence;
-`FAILED` means the root could not be safely observed. `SCANNED` is retained only
-as a compatibility alias for `COMPLETE`. A global root with failed detector
-evidence is therefore `PARTIAL`, never a clean `COMPLETE` root.
+`FAILED` means the root could not be safely observed. `SCANNED` is retained as
+a legacy/unclassified status only; it is not an alias for `COMPLETE` and maps
+to conservative incomplete planning context. A global root with failed
+detector evidence is therefore `PARTIAL`, never a clean `COMPLETE` root.
 
 ### CleanupCandidate
 
@@ -61,7 +62,9 @@ plan-item identifiers and the exact findings/evidence snapshot from which it
 was derived. The pure v0.3 planner requires an engine-issued trusted scan
 context and canonical `ApprovedRoot` binding, accepts `Finding` objects and
 filesystem identity observations, and never accepts an arbitrary path list.
-Candidate paths must be absolute and contained by the bound root. It excludes
+Candidate paths must be absolute and contained by the bound root, and a
+mutation-capable identity must retain the authoritative Windows final path in
+addition to the lexical request. It excludes
 rejected, protected, active, referenced, incomplete, uncertain, or non-eligible
 findings. A plan is not an authorization to execute.
 
@@ -90,7 +93,10 @@ automatically authorize execution.
 Authorization is issued only for a non-empty engine-generated plan with a
 `VALID` engine-issued validation proof. The authorization binds the exact plan
 digest and validation-state digest, so a later validation after any material
-state change cannot reuse it. Issuing authorization performs no mutation.
+state change cannot reuse it. Each plan item also has private one-shot
+consumption state, so a consumed item cannot be replayed; a partial multi-item
+operation leaves only unconsumed items attributable to the original
+authorization. Issuing authorization performs no mutation.
 
 ### CleanupExecutor, Trash/Quarantine, and Journal/Undo
 
@@ -99,21 +105,33 @@ prefer reversible Trash/Quarantine with an audit journal and Undo/recovery.
 Permanent deletion is an advanced future capability and requires explicit
 authorization and a separate safety design.
 
-The v0.3 contract also has isolated mutation primitives for explicitly marked
-disposable directories below the operating-system temporary directory. An
-engine-issued `DisposableRoot`, `QuarantineRoot`, and `AuditJournal` bind the
-operation to that test boundary. Authorized plan items are moved by a
-same-filesystem, non-overwriting Windows rename into quarantine and can be
-restored through a validated recovery identifier. The journal records planned,
+The v0.3 contract also has internal mutation primitives for explicitly marked
+disposable directories below the operating-system temporary directory and an
+engine-issued `ApprovedMutationRoot` for a bounded real-Windows local root.
+The approved root is derived from the exact authorized plan, must be on a
+local fixed volume outside system/protected locations, and is not exported as
+a public cleanup handle. `QuarantineRoot` and `AuditJournal` remain bound to
+that root. Filesystem identities retain both the lexical requested path and,
+for mutation-capable observations, the authoritative Windows final path.
+Authorized plan items are moved by a same-filesystem,
+non-overwriting Windows rename into DWI-managed quarantine and can be restored
+through a validated recovery identifier. The journal records planned,
 quarantining, quarantined, restoring, restored, failed, and explicit
 post-rename-but-not-finalized states. Every record carries a strict sequence,
 previous-record hash, and current-record hash. This detects corruption,
 deletion, reordering, and broken chains, but is tamper evidence rather than
 authenticated trust: an attacker who rewrites the complete journal can
 recompute the chain. A final complete-line truncation cannot be detected from
-the journal alone; incomplete final lines are rejected. This is not a
-user-workspace executor, public cleanup API, or permanent deletion
-implementation.
+the journal alone; incomplete final lines are rejected. Windows Recycle Bin
+integration remains deferred because its recovery metadata and restart-safe
+Undo contract are not yet proven. This is not a public cleanup API or permanent
+deletion implementation.
+
+Before those lifecycle records, the mutation boundary creates an atomic local
+claim file for the exact plan item and records `AUTHORIZATION_CLAIMED`. A
+second in-process or local-process attempt cannot claim the same item. If a
+process stops after claiming but before mutation, restart reconciliation records
+an explicit failed-not-started state without moving the target.
 
 The mutation functions, disposable-root capabilities, and journal types are
 kept in the internal `dwi.mutation` module rather than widened into convenient
@@ -143,6 +161,9 @@ These dimensions must remain distinct:
 - **GitObjectForm:** whether the explicit `.git` path was a valid directory,
   valid gitdir-reference file, missing, inaccessible, or ambiguous. It is
   protection/context evidence, not a reclaim conclusion.
+- **FilesystemIdentity:** positive device/inode/type/reparse identity plus the
+  lexical-to-authoritative final-path binding required for mutation-capable
+  planning.
 - **RootBoundary / RootStatus:** the safety classification and disposition of
   an approved, denied, skipped, failed, partial, or complete scan root.
 - **ScanTermination:** whether a bounded scan completed or stopped because of

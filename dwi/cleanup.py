@@ -11,6 +11,7 @@ import hashlib
 import json
 import ntpath
 import os
+from threading import Lock
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Iterable, Mapping
@@ -55,6 +56,7 @@ class ExecutionAuthorizationStatus(str, Enum):
 
 
 class QuarantineState(str, Enum):
+    AUTHORIZATION_CLAIMED = "authorization_claimed"
     PLANNED = "planned"
     QUARANTINING = "quarantining"
     QUARANTINE_COMMITTED_UNJOURNALED = "quarantine_committed_unjournaled"
@@ -144,6 +146,28 @@ class _ValidationProof:
     snapshot_digest: str
     scan_provenance: str
     public_digest: str
+    validated_snapshots: tuple[tuple[PlanItemId, FindingSnapshot], ...] = ()
+
+
+class _AuthorizationConsumption:
+    """Private one-shot ledger shared by copies of one engine authorization."""
+
+    def __init__(self, plan_id: PlanId, item_ids: tuple[PlanItemId, ...]) -> None:
+        self.plan_id = plan_id
+        self.item_ids = item_ids
+        self._consumed: set[PlanItemId] = set()
+        self._lock = Lock()
+
+    def consume(self, plan_id: PlanId, item_id: PlanItemId) -> bool:
+        with self._lock:
+            if plan_id != self.plan_id or item_id not in self.item_ids or item_id in self._consumed:
+                return False
+            self._consumed.add(item_id)
+            return True
+
+    def is_consumed(self, item_id: PlanItemId) -> bool:
+        with self._lock:
+            return item_id in self._consumed
 
 
 @dataclass(frozen=True)
@@ -172,11 +196,17 @@ class FilesystemIdentity:
     inode: int | None
     object_type: NodeKind
     is_reparse: bool
+    authoritative_path: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (("device", self.device), ("inode", self.inode)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value <= 0):
                 raise ValueError(f"filesystem {name} identity must be a positive integer or None")
+        if self.authoritative_path is not None:
+            canonical = _canonical_absolute_path(self.authoritative_path)
+            if canonical is None:
+                raise ValueError("authoritative filesystem path must be an absolute normalized Windows path")
+            object.__setattr__(self, "authoritative_path", canonical)
 
     @property
     def is_suitable_for_planning(self) -> bool:
@@ -189,7 +219,12 @@ class FilesystemIdentity:
             and self.inode > 0
             and self.object_type is NodeKind.DIRECTORY
             and not self.is_reparse
+            and self.authoritative_path is not None
         )
+
+    @property
+    def has_authoritative_path(self) -> bool:
+        return self.authoritative_path is not None
 
 
 @dataclass(frozen=True)
@@ -314,6 +349,7 @@ class ExecutionAuthorization:
     validation_state_digest: str = ""
     _capability: object | None = field(default=None, repr=False, compare=False)
     _authorization_digest: str = field(default="", repr=False, compare=False)
+    _consumption: _AuthorizationConsumption | None = field(default=None, repr=False, compare=False)
 
     @property
     def is_authorized(self) -> bool:
@@ -321,6 +357,8 @@ class ExecutionAuthorization:
             self.status is ExecutionAuthorizationStatus.AUTHORIZED
             and self._capability is _ENGINE_AUTHORIZATION_CAPABILITY
             and self._authorization_digest == _authorization_public_digest(self)
+            and self._consumption is not None
+            and any(not self._consumption.is_consumed(item_id) for item_id in self.authorized_item_ids)
         )
 
     def matches_validation(self, validation: PlanValidation) -> bool:
@@ -336,6 +374,13 @@ class ExecutionAuthorization:
             and proof.plan_digest == self.plan_digest
             and proof.public_digest == self.validation_state_digest
             and _validation_public_digest(validation) == self.validation_state_digest
+        )
+
+    def _consume_item(self, plan_id: PlanId, item_id: PlanItemId) -> bool:
+        return (
+            self.is_authorized
+            and self._consumption is not None
+            and self._consumption.consume(plan_id, item_id)
         )
 
 
@@ -524,7 +569,7 @@ def create_cleanup_plan(
             exclusions.append(_exclusion(finding, "action eligibility is not explicitly eligible"))
             continue
         if not identity.is_suitable_for_planning:
-            exclusions.append(_exclusion(finding, "filesystem identity is incomplete, non-directory, or reparse-backed"))
+            exclusions.append(_exclusion(finding, "filesystem identity is incomplete, non-directory, reparse-backed, or lacks authoritative path"))
             continue
         if not finding.evidence.is_complete or finding.evidence.has_uncertainty or finding.evidence.has_conflicts:
             exclusions.append(_exclusion(finding, "required safety evidence is incomplete, failed, uncertain, or conflicting"))
@@ -586,6 +631,13 @@ def validate_cleanup_plan(
         raise TypeError("plan validation requires an engine-issued TrustedScanContext")
 
     failures: list[ValidationFailure] = []
+    expected_item_ids = {item.plan_item_id for item in plan.items}
+    supplied_item_ids = set(current_snapshots)
+    if supplied_item_ids != expected_item_ids:
+        failures.append(ValidationFailure(
+            "snapshot-set-mismatch",
+            "immediate validation must contain exactly the plan item snapshots",
+        ))
     if scan_context.completeness is not ScanCompleteness.COMPLETE:
         failures.append(ValidationFailure(
             "scan-incomplete",
@@ -614,7 +666,19 @@ def validate_cleanup_plan(
         if not current.filesystem_identity.is_suitable_for_planning:
             failures.append(ValidationFailure(
                 "identity-veto",
-                "current filesystem identity is missing, invalid, or reparse-backed",
+                "current filesystem identity is missing, invalid, reparse-backed, or lacks authoritative path",
+                item.plan_item_id,
+            ))
+        if not current.evidence.is_complete or current.evidence.has_uncertainty or current.evidence.has_conflicts:
+            failures.append(ValidationFailure(
+                "evidence-veto",
+                "current required evidence is incomplete, uncertain, or conflicting",
+                item.plan_item_id,
+            ))
+        if not current.size.complete:
+            failures.append(ValidationFailure(
+                "size-veto",
+                "current size observation is incomplete",
                 item.plan_item_id,
             ))
         if current.risk_label in {RiskLabel.REVIEW_REQUIRED, RiskLabel.NEVER_DELETE}:
@@ -674,6 +738,7 @@ def validate_cleanup_plan(
         snapshot_digest,
         scan_context.scan_provenance,
         public_digest,
+        tuple(sorted(current_snapshots.items(), key=lambda item: item[0].value)),
     )
     return PlanValidation(plan.plan_id, status, failures_tuple, token, proof)
 
@@ -692,6 +757,10 @@ def authorize_execution(plan: CleanupPlan, validation: PlanValidation) -> Execut
         and proof.capability is _ENGINE_VALIDATION_CAPABILITY
         and proof.plan_digest == _digest(plan)
         and proof.public_digest == validation_digest
+        and proof.validated_snapshots == tuple(sorted(
+            ((item.plan_item_id, item.snapshot) for item in plan.items),
+            key=lambda item: item[0].value,
+        ))
     )
     if not authentic or not isinstance(validation, PlanValidation) or validation.plan_id != plan.plan_id or not validation.is_valid or not plan.items:
         authorization = ExecutionAuthorization(
@@ -717,6 +786,8 @@ def authorize_execution(plan: CleanupPlan, validation: PlanValidation) -> Execut
         _digest(plan),
         validation_digest,
         _ENGINE_AUTHORIZATION_CAPABILITY,
+        "",
+        _AuthorizationConsumption(plan.plan_id, item_ids),
     )
     return replace(authorization, _authorization_digest=_authorization_public_digest(authorization))
 
@@ -751,6 +822,9 @@ def scan_completeness_from_system_scan(scan: object) -> ScanCompleteness:
     statuses = {getattr(item.status, "value", item.status) for item in observations}
     if "failed" in statuses:
         return ScanCompleteness.FAILED
+    # ``scanned`` is a legacy/unclassified observation marker, not proof that
+    # all required evidence was complete. Mutation planning therefore fails
+    # closed until the scanner emits explicit COMPLETE.
     if statuses - {"complete"} or "partial" in statuses:
         return ScanCompleteness.PARTIAL
     return ScanCompleteness.COMPLETE

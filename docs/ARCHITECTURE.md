@@ -70,10 +70,11 @@ system; an unknown basename returns no analysis result.
 - **Safety Policy:** applies ordered gates and produces the risk label, action eligibility, and rule trace.
 - **Reclaim ranking:** estimates reclaim priority independently from safety.
 - **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions.
-- **Cleanup planning:** pure v0.3 logic creates immutable engine-generated plans from eligible Findings, complete trusted scan context, canonical approved-root bindings, and valid filesystem identity snapshots; raw paths are not accepted as plan inputs.
+- **Cleanup planning:** pure v0.3 logic creates immutable engine-generated plans from eligible Findings, complete trusted scan context, canonical approved-root bindings, and valid filesystem identity snapshots. Mutation-capable snapshots retain both lexical and authoritative final paths; raw paths are not accepted as plan inputs.
 - **Plan validation:** pure v0.3 logic requires a new trusted scan context and compares current snapshots immediately before execution, returning valid, stale, blocked, or inconclusive states; it can only preserve or increase conservatism.
 - **Execution authorization:** pure v0.3 logic issues metadata-only authorization from an internal engine proof bound to the exact plan and validation state; it is not implied by `SAFE`, `ELIGIBLE_FOR_EXPLICIT_ACTION`, copied tokens, or public validation fields.
-- **Isolated mutation primitive:** accepts only the exact authorized plan and engine-issued disposable-root/quarantine/journal capabilities; it rechecks identity/type/reparse state immediately and uses only same-filesystem non-overwriting Windows rename.
+- **Mutation Safety Gate:** accepts only the exact authorized plan, its valid immediate validation, a private unconsumed plan-item authorization, and the plan's engine-approved local root. It resolves lexical paths through an authoritative Windows final-path handle API after ordinary ancestry checks, rejects filesystem roots, network/UNC/mapped/unknown volumes, system/protected roots, linked/reparse paths, and root escapes, and compares both path identities at execution time.
+- **Isolated mutation primitive:** accepts only the exact authorized plan and engine-issued disposable or approved-local-root/quarantine/journal capabilities; it atomically claims each plan item before writing lifecycle records, rechecks identity/type/reparse/root/evidence/policy state immediately, and uses only same-filesystem non-overwriting Windows rename.
 - **Cleanup execution:** future public executor accepts only authorized engine plans, prefers Trash/Quarantine, and records an audit journal for Undo/recovery.
 
 The scanner adapts each dispatcher result through a single-candidate selection
@@ -95,9 +96,10 @@ global storage, denied boundaries, partial sizes, and scan termination separate.
 
 Root status is part of the planning safety boundary: `COMPLETE` means no root or
 finding observation failures were recorded, `PARTIAL` means traversal or
-evidence was incomplete, and `FAILED` means safe observation failed. A global
-cache root with failed evidence is `PARTIAL`, so it cannot silently satisfy
-cleanup planning.
+evidence was incomplete, and `FAILED` means safe observation failed. The legacy
+`SCANNED` value is not equivalent to `COMPLETE` and is treated as incomplete
+for planning. A global cache root with failed evidence is `PARTIAL`, so it
+cannot silently satisfy cleanup planning.
 
 ## Boundary rules
 
@@ -111,7 +113,7 @@ The domain core must not know whether a result came from the CLI, a future deskt
 
 ## Future architecture, explicitly out of MVP
 
-The project may later add a desktop UI, MCP adapter, optional LLM explanation layer, broader detector registry, multi-project reachability graph, persistent index, or public cleanup executor. Each must consume already-computed core results and must not bypass safety policy. The disposable-root mutation primitive is an internal test boundary, not a substitute for real Windows Trash integration.
+The project may later add a desktop UI, MCP adapter, optional LLM explanation layer, broader detector registry, multi-project reachability graph, persistent index, or public cleanup executor. Each must consume already-computed core results and must not bypass safety policy. The internal disposable-root and approved-local mutation primitives are not a public executor or a substitute for proven Windows Recycle Bin integration.
 
 ## Determinism and auditability
 
@@ -126,10 +128,10 @@ and network-deny-by-default; it performs no telemetry, HTTP, cloud, or API
 communication. `--allow-network` permits only explicitly requested bounded
 network-filesystem I/O after the same safety gate. It has no user-workspace
 cleanup execution, undo/trash, process-wide activity scan, cross-project
-reachability, or project-wide package-manager analysis. The v0.3 disposable-root
-primitive performs only reversible quarantine/restore moves under its hard test
-root guard; no public executor, permanent deletion, or real-Windows Trash
-integration is implemented.
+reachability, or project-wide package-manager analysis. The v0.3 mutation
+primitive performs only reversible quarantine/restore moves after its hard
+disposable-test-root or approved-local-root gate; no public executor,
+permanent deletion, or Windows Recycle Bin integration is implemented.
 
 Python filesystem APIs cannot make a multi-operation path traversal perfectly
 atomic against concurrent replacement. The scanner and size collector
@@ -154,11 +156,22 @@ to an ordinary failure. The chain provides corruption/tamper evidence, not
 authenticated cryptographic trust, and cannot detect deletion of a complete
 final line without external terminal metadata.
 
+Authorization ownership is claimed with an `O_CREAT|O_EXCL` local claim file
+before the first lifecycle record. This prevents same-item replay across local
+processes when the filesystem honors atomic exclusive creation. It does not
+make append ordering for unrelated items a distributed transaction; journal
+corruption or ambiguous writes still fail closed.
+An interruption after claim-file creation but before the
+`AUTHORIZATION_CLAIMED` journal append can leave an orphan claim file. That is
+deliberately fail-closed availability debt and requires explicit recovery
+reconciliation before public cleanup release.
+
 MCP cleanup operations must accept only engine-generated `plan_id` and
 plan-item identifiers. An operation such as `delete_file(path)` is prohibited.
 Execution must revalidate immediately before acting, prefer
 Trash/Quarantine, and remain auditable. These are public executor boundaries;
-the current mutation runtime is restricted to marked disposable test roots.
+the current mutation runtime remains internal and accepts only marked disposable
+test roots or engine-issued approved local roots.
 
 ## Localization boundary
 

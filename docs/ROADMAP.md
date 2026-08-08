@@ -42,18 +42,20 @@ service work, or network discovery by default.
 - Immediate filesystem/evidence `PlanValidation`.
 - Separate metadata-only `ExecutionAuthorization`.
 - Typed `RecoveryMetadata` and `QuarantineRecord` contracts.
-- Isolated reversible Quarantine/Journal/Undo primitives restricted to
-  explicitly marked disposable test directories under the OS temporary root.
+- Isolated reversible Quarantine/Journal/Undo primitives guarded by either an
+  explicitly marked disposable test directory or an internal approved-local
+  Windows root capability derived from the exact authorized plan.
 - Journal chain integrity with explicit post-rename recovery states and
   conservative restart reconciliation.
-- No user-workspace executor, public cleanup interface, or permanent deletion.
+- No public cleanup interface, permanent deletion, Windows Recycle Bin
+  integration, or arbitrary user-workspace path API.
 
 This remains an internal milestone; it is not a public release.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not independently authorize
-execution. The next bounded task is a Mutation Safety Gate audit and hardening
-of real Windows Trash/Quarantine integration before any public cleanup
-interface. Permanent deletion remains out of scope until explicitly
+execution. The next bounded task is a direct Mutation Safety Gate audit and,
+only if approved, a human-confirmed cleanup application service above the
+internal executor. Permanent deletion remains out of scope until explicitly
 authorized.
 
 ## v0.4 — Desktop

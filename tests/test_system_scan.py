@@ -84,7 +84,7 @@ class SystemScanTests(unittest.TestCase):
             result = scan_system(self._root_options(root))
             self.assertEqual(result.termination, ScanTermination.COMPLETED)
             self.assertEqual(len(result.workspace_findings), 1)
-            self.assertEqual(result.root_observations[0].status, RootStatus.SCANNED)
+            self.assertEqual(result.root_observations[0].status, RootStatus.COMPLETE)
             self.assertEqual(result.summary.workspace_findings, 1)
 
     def test_unc_is_denied_by_default(self) -> None:
@@ -118,7 +118,7 @@ class SystemScanTests(unittest.TestCase):
                 denied = scan_system(self._root_options(root, allow_network=False))
                 allowed = scan_system(self._root_options(root, allow_network=True))
             self.assertEqual(denied.root_observations[0].status, RootStatus.DENIED)
-            self.assertEqual(allowed.root_observations[0].status, RootStatus.SCANNED)
+            self.assertEqual(allowed.root_observations[0].status, RootStatus.COMPLETE)
 
     def test_symlink_root_is_denied_without_following(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

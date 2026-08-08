@@ -66,6 +66,12 @@ These cases define the failure-oriented design and future test fixtures. They ar
 - A partial or failed SystemScan is incorrectly treated as complete.
 - A stale validation token or replayed authorization is presented to an
   executor.
+- A Windows 8.3 alias resolves to `Program Files`, `Program Files (x86)`,
+  `ProgramData`, or `Windows`, or authoritative final-path resolution fails.
+- A lexical path and authoritative final path differ at planning or immediate
+  mutation revalidation, including a reparse/junction substitution.
+- Two concurrent attempts claim the same authorization item, or a process
+  stops after the claim and before `PLANNED`.
 - A caller constructs an apparently `VALID` `PlanValidation`, copies a token,
   modifies validation fields, or presents validation for a different plan.
 - A future quarantine destination is occupied, unavailable, or cannot be
@@ -79,9 +85,14 @@ These cases define the failure-oriented design and future test fixtures. They ar
 
 Each case must fail closed. Planning and validation record structured reasons;
 the isolated mutation layer additionally owns journaled recovery and replay
-handling only below an explicitly marked disposable temporary root. A committed
-rename remains explicitly recoverable when final journalization fails. It never
-accepts a user-workspace or arbitrary raw-path mutation target.
+handling below either an explicitly marked disposable temporary root or an
+engine-issued approved local root. A committed rename remains explicitly
+recoverable when final journalization fails. The gate rejects system,
+network/UNC/mapped, filesystem-root, protected, linked/reparse, and
+out-of-plan targets. It never accepts a user-workspace or arbitrary raw-path
+mutation target. Authorization claims occur before `PLANNED`; a rejected
+replay produces no extra mutation lifecycle record, and restart reconciliation
+handles a claimed-but-not-started state.
 
 ## Required behavior
 

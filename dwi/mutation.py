@@ -1,9 +1,12 @@
-"""Disposable-root-only reversible mutation primitives for internal v0.3 tests.
+"""Internal reversible mutation primitives guarded by a Windows safety gate.
 
 This module is intentionally separate from the pure cleanup contracts. It does
 not expose raw-path cleanup APIs, does not delete, and does not copy/delete as a
-fallback. Mutation is accepted only for an engine-authorized plan and an
-explicit marked directory below the operating system temporary directory.
+fallback. Mutation is accepted only for an engine-authorized plan, immediate
+validation, a private one-shot authorization item, and either an explicitly
+marked disposable test root or an engine-approved local Windows root. The
+approved-local path is deliberately not exported through ``dwi`` and is not a
+public cleanup interface.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ import ntpath
 import os
 import stat
 import tempfile
+import ctypes
+from ctypes import wintypes
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable
@@ -39,6 +44,8 @@ _DISPOSABLE_MARKER_CONTENT = "DWI-DISPOSABLE-ROOT-v0.3\n"
 _MUTATION_ROOT_CAPABILITY = object()
 _JOURNAL_SCHEMA = "dwi-journal-v0.3"
 _GENESIS_PREVIOUS_HASH = "GENESIS:dwi-journal-v0.3"
+_CLAIM_FILE_PREFIX = ".dwi-claim-"
+_CLAIM_FILE_SUFFIX = ".json"
 MutationClock = Callable[[], str]
 
 
@@ -59,13 +66,135 @@ class JournalCorruptionError(JournalError):
 
 
 @dataclass(frozen=True)
+class AuthoritativePath:
+    """Lexical request plus the Windows final path returned by the OS."""
+
+    lexical_path: str
+    final_path: str
+
+    def __post_init__(self) -> None:
+        lexical = _canonical_absolute_path(self.lexical_path)
+        final = _canonical_absolute_path(self.final_path)
+        if lexical is None or final is None:
+            raise ValueError("authoritative paths must be absolute normalized Windows paths")
+        object.__setattr__(self, "lexical_path", lexical)
+        object.__setattr__(self, "final_path", final)
+
+
+def _windows_final_path(path: str) -> str | None:
+    """Resolve one already-checked ordinary path through Windows handles."""
+
+    if os.name != "nt":
+        return None
+    handle = None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel32.CreateFileW(
+            path,
+            0,
+            0x00000001 | 0x00000002 | 0x00000004,
+            None,
+            3,
+            0x02000000,
+            None,
+        )
+        invalid = wintypes.HANDLE(-1).value
+        if handle in {None, invalid}:
+            return None
+        capacity = 1024
+        for _ in range(4):
+            buffer = ctypes.create_unicode_buffer(capacity)
+            length = kernel32.GetFinalPathNameByHandleW(handle, buffer, capacity, 0)
+            if length == 0:
+                return None
+            if length < capacity:
+                value = buffer.value
+                if value.startswith("\\\\?\\UNC\\"):
+                    value = "\\\\" + value[8:]
+                elif value.startswith("\\\\?\\"):
+                    value = value[4:]
+                return value
+            capacity = int(length) + 1
+        return None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+    finally:
+        if handle not in {None, wintypes.HANDLE(-1).value}:
+            try:
+                ctypes.windll.kernel32.CloseHandle(handle)
+            except (AttributeError, OSError):
+                pass
+
+
+def _authoritative_path(path: str, *, require_directory: bool = True) -> AuthoritativePath | None:
+    """Return OS-resolved identity, or ``None`` on any uncertainty."""
+
+    canonical = _canonical_absolute_path(path)
+    if canonical is None or _is_unc_path(canonical):
+        return None
+    try:
+        metadata = os.lstat(canonical)
+    except OSError:
+        return None
+    if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+        return None
+    if require_directory and not stat.S_ISDIR(metadata.st_mode):
+        return None
+    drive, _ = ntpath.splitdrive(canonical)
+    if not drive:
+        return None
+    try:
+        _validate_ordinary_ancestry(canonical, drive + "\\")
+    except (MutationRefused, ValueError):
+        return None
+    final = _windows_final_path(canonical)
+    if final is None:
+        return None
+    final_canonical = _canonical_absolute_path(final)
+    if final_canonical is None or _is_unc_path(final_canonical):
+        return None
+    return AuthoritativePath(canonical, final_canonical)
+
+
+@dataclass(frozen=True)
 class DisposableRoot:
     path: str
+    _capability: object | None = None
+    authoritative_path: str | None = None
+
+    @property
+    def is_engine_trusted(self) -> bool:
+        return (
+            self._capability is _MUTATION_ROOT_CAPABILITY
+            and _canonical_absolute_path(self.path) == self.path
+            and self.authoritative_path is not None
+        )
+
+
+@dataclass(frozen=True)
+class ApprovedMutationRoot:
+    """Engine-issued local root admitted by the real-filesystem safety gate."""
+
+    path: str
+    approved_plan_root: str
+    authoritative_path: str
     _capability: object | None = None
 
     @property
     def is_engine_trusted(self) -> bool:
-        return self._capability is _MUTATION_ROOT_CAPABILITY
+        return (
+            self._capability is _MUTATION_ROOT_CAPABILITY
+            and _canonical_absolute_path(self.path) == self.path
+            and _canonical_absolute_path(self.approved_plan_root) == self.approved_plan_root
+            and self.path == self.approved_plan_root
+            and _canonical_absolute_path(self.authoritative_path) == self.authoritative_path
+        )
+
+
+MutationRoot = DisposableRoot | ApprovedMutationRoot
 
 
 def _safe_directory_metadata(path: str) -> os.stat_result:
@@ -82,7 +211,118 @@ def create_disposable_root(path: str | os.PathLike[str]) -> DisposableRoot:
     """Accept only a marked child directory of the OS temporary directory."""
 
     canonical = _verify_marked_disposable_path(os.fspath(path))
-    return DisposableRoot(canonical, _MUTATION_ROOT_CAPABILITY)
+    authority = _authoritative_path(canonical)
+    if authority is None:
+        raise MutationRefused("disposable root final path could not be established")
+    return DisposableRoot(canonical, _MUTATION_ROOT_CAPABILITY, authority.final_path)
+
+
+def _is_unc_path(path: str) -> bool:
+    return path.startswith(("\\\\", "//"))
+
+
+def _windows_drive_type(root: str) -> int | None:
+    if os.name != "nt":
+        return None
+    try:
+        return int(ctypes.windll.kernel32.GetDriveTypeW(root))
+    except (AttributeError, OSError):
+        return None
+
+
+def _is_filesystem_root(path: str) -> bool:
+    drive, tail = ntpath.splitdrive(path)
+    return bool(drive) and ntpath.normcase(ntpath.normpath(tail or "\\")) in {"", "\\"}
+
+
+def _protected_windows_roots(drive: str | None = None) -> tuple[str, ...] | None:
+    values = [
+        os.environ.get("WINDIR"),
+        os.environ.get("SystemRoot"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("ProgramData"),
+    ]
+    if drive:
+        values.extend(
+            f"{drive}\\{name}"
+            for name in ("Windows", "Program Files", "Program Files (x86)", "ProgramData")
+        )
+    authorities: list[str] = []
+    for value in sorted(set(value for value in values if value), key=lambda item: (item.casefold(), item)):
+        if not value:
+            continue
+        authority = _authoritative_path(value)
+        if authority is None:
+            if not os.path.lexists(value):
+                continue
+            return None
+        authorities.append(authority.final_path)
+    return tuple(sorted(set(authorities), key=lambda item: (item.casefold(), item)))
+
+
+def _is_protected_authoritative_path(path: AuthoritativePath) -> bool:
+    drive, _ = ntpath.splitdrive(path.final_path)
+    protected = _protected_windows_roots(drive)
+    if protected is None:
+        return True
+    return any(_path_is_within(path.final_path, root) for root in protected)
+
+
+def _verify_approved_local_root(path: str) -> str:
+    if os.name != "nt":
+        raise MutationRefused("real-filesystem mutation roots are Windows-only")
+    canonical = _canonical_absolute_path(path)
+    if canonical is None or _is_unc_path(canonical):
+        raise MutationRefused("mutation root must be an absolute local Windows directory")
+    if _is_filesystem_root(canonical):
+        raise MutationRefused("filesystem roots are not approved mutation roots")
+    drive, _ = ntpath.splitdrive(canonical)
+    if _windows_drive_type(drive + "\\") != 3:
+        raise MutationRefused("mutation root must be on a local fixed drive")
+    authority = _authoritative_path(canonical)
+    if authority is None:
+        raise MutationRefused("mutation root authoritative path could not be established")
+    if _is_protected_authoritative_path(authority):
+        raise MutationRefused("system, Program Files, and ProgramData roots are not approved")
+    metadata = _safe_directory_metadata(canonical)
+    if getattr(metadata, "st_dev", 0) <= 0:
+        raise MutationRefused("mutation root filesystem identity is not trustworthy")
+    return canonical
+
+
+def approve_local_mutation_root(
+    plan: CleanupPlan,
+    validation: PlanValidation,
+    authorization: ExecutionAuthorization,
+) -> ApprovedMutationRoot:
+    """Admit exactly the plan's root after the engine gate has succeeded.
+
+    The function intentionally takes no arbitrary path. The path comes from
+    the immutable, engine-bound plan and is checked again against the current
+    validation and one-shot authorization before a root capability is issued.
+    """
+
+    if not isinstance(plan, CleanupPlan) or not isinstance(validation, PlanValidation):
+        raise MutationRefused("approved mutation root requires an engine plan and validation")
+    item_ids = tuple(item.plan_item_id for item in plan.items)
+    if (
+        not validation.is_valid
+        or not authorization.is_authorized
+        or not authorization.matches_validation(validation)
+        or authorization.plan_id != plan.plan_id
+        or authorization.authorized_item_ids != item_ids
+        or not item_ids
+    ):
+        raise MutationRefused("approved mutation root requires exact current plan authorization")
+    canonical = _verify_approved_local_root(plan.approved_root.path)
+    authority = _authoritative_path(canonical)
+    if authority is None:
+        raise MutationRefused("approved root authoritative path could not be established")
+    for item in plan.items:
+        if item.snapshot.filesystem_identity.authoritative_path is None:
+            raise MutationRefused("plan item lacks authoritative filesystem identity")
+    return ApprovedMutationRoot(canonical, plan.approved_root.path, authority.final_path, _MUTATION_ROOT_CAPABILITY)
 
 
 def _verify_marked_disposable_path(path: str) -> str:
@@ -113,30 +353,47 @@ class QuarantineRoot:
     path: str
     disposable_path: str
     _capability: object | None = None
+    authoritative_path: str | None = None
 
     @property
     def is_engine_trusted(self) -> bool:
         return (
             self._capability is _MUTATION_ROOT_CAPABILITY
             and _path_is_within(self.path, self.disposable_path)
+            and self.authoritative_path is not None
         )
 
 
-def create_quarantine_root(root: DisposableRoot, relative_path: str = ".dwi-quarantine") -> QuarantineRoot:
-    if not root.is_engine_trusted:
-        raise MutationRefused("quarantine root requires an engine-issued disposable root")
-    _verify_marked_disposable_path(root.path)
+def _verify_mutation_root(root: MutationRoot) -> str:
+    if not isinstance(root, (DisposableRoot, ApprovedMutationRoot)) or not root.is_engine_trusted:
+        raise MutationRefused("mutation requires an engine-issued mutation root")
+    current = _authoritative_path(root.path)
+    if current is None or current.final_path != root.authoritative_path:
+        raise MutationRefused("mutation root authoritative identity changed or is unavailable")
+    if isinstance(root, DisposableRoot):
+        return _verify_marked_disposable_path(root.path)
+    return _verify_approved_local_root(root.path)
+
+
+def create_quarantine_root(root: MutationRoot, relative_path: str = ".dwi-quarantine") -> QuarantineRoot:
+    root_path = _verify_mutation_root(root)
     if not relative_path or os.path.isabs(relative_path) or "/" in relative_path or "\\" in relative_path or relative_path in {".", ".."}:
-        raise MutationRefused("quarantine root must be a simple relative child of the disposable root")
-    path = _canonical_absolute_path(os.path.join(root.path, relative_path))
-    if path is None or not _path_is_within(path, root.path):
-        raise MutationRefused("quarantine root escaped the disposable root")
+        raise MutationRefused("quarantine root must be a simple relative child of the approved mutation root")
+    path = _canonical_absolute_path(os.path.join(root_path, relative_path))
+    if path is None or not _path_is_within(path, root_path):
+        raise MutationRefused("quarantine root escaped the approved mutation root")
     _safe_directory_metadata(path)
-    root_metadata = _safe_directory_metadata(root.path)
+    root_metadata = _safe_directory_metadata(root_path)
     quarantine_metadata = _safe_directory_metadata(path)
-    if getattr(root_metadata, "st_dev", 0) != getattr(quarantine_metadata, "st_dev", 0):
-        raise MutationRefused("quarantine root is not on the disposable root filesystem")
-    return QuarantineRoot(path, root.path, _MUTATION_ROOT_CAPABILITY)
+    root_device = getattr(root_metadata, "st_dev", 0)
+    quarantine_device = getattr(quarantine_metadata, "st_dev", 0)
+    if root_device <= 0 or quarantine_device <= 0 or root_device != quarantine_device:
+        raise MutationRefused("quarantine root is not on the approved root filesystem")
+    authority = _authoritative_path(path)
+    root_authority = _authoritative_path(root_path)
+    if authority is None or root_authority is None or not _path_is_within(authority.final_path, root_authority.final_path):
+        raise MutationRefused("quarantine root authoritative path is unavailable or escaped the root")
+    return QuarantineRoot(path, root_path, _MUTATION_ROOT_CAPABILITY, authority.final_path)
 
 
 def _is_reparse(metadata: os.stat_result) -> bool:
@@ -180,33 +437,54 @@ def _observe_identity(path: str) -> tuple[FilesystemIdentity | None, str | None]
     device = getattr(metadata, "st_dev", 0)
     inode = getattr(metadata, "st_ino", 0)
     try:
-        identity = FilesystemIdentity(device, inode, _node_kind(metadata), _is_reparse(metadata))
+        authority = _authoritative_path(path)
+        if authority is None:
+            return None, "authoritative filesystem path could not be established"
+        identity = FilesystemIdentity(device, inode, _node_kind(metadata), _is_reparse(metadata), authority.final_path)
     except ValueError as error:
         return None, f"filesystem identity is invalid: {error}"
     return identity, None
 
 
 def _same_identity(expected: FilesystemIdentity, actual: FilesystemIdentity) -> bool:
-    return expected == actual
+    return (
+        expected.device == actual.device
+        and expected.inode == actual.inode
+        and expected.object_type is actual.object_type
+        and expected.is_reparse == actual.is_reparse
+    )
 
 
 def _lexists(path: str) -> bool:
     return os.path.lexists(path)
 
 
-def _require_mutation_roots(root: DisposableRoot, quarantine_root: QuarantineRoot) -> None:
-    if not root.is_engine_trusted:
-        raise MutationRefused("mutation requires an engine-issued disposable root")
-    _verify_marked_disposable_path(root.path)
+def _require_mutation_roots(root: MutationRoot, quarantine_root: QuarantineRoot) -> None:
+    root_path = _verify_mutation_root(root)
     if not quarantine_root.is_engine_trusted or quarantine_root.disposable_path != root.path:
-        raise MutationRefused("quarantine root is not bound to the disposable root")
-    _safe_directory_metadata(root.path)
+        raise MutationRefused("quarantine root is not bound to the approved mutation root")
+    quarantine_authority = _authoritative_path(quarantine_root.path)
+    root_authority = _authoritative_path(root_path)
+    if (
+        quarantine_authority is None
+        or root_authority is None
+        or quarantine_root.authoritative_path != quarantine_authority.final_path
+        or not _path_is_within(quarantine_authority.final_path, root_authority.final_path)
+    ):
+        raise MutationRefused("quarantine root authoritative identity changed or escaped the root")
+    _safe_directory_metadata(root_path)
     _safe_directory_metadata(quarantine_root.path)
 
 
-def _require_bound_journal(journal: AuditJournal, root: DisposableRoot) -> None:
-    if not isinstance(journal, AuditJournal) or not journal.is_engine_trusted or journal.disposable_path != root.path:
-        raise MutationRefused("journal is not bound to the disposable root")
+def _require_bound_journal(journal: AuditJournal, root: MutationRoot) -> None:
+    expected_kind = "disposable" if isinstance(root, DisposableRoot) else "approved-local"
+    if (
+        not isinstance(journal, AuditJournal)
+        or not journal.is_engine_trusted
+        or journal.disposable_path != root.path
+        or journal.root_kind != expected_kind
+    ):
+        raise MutationRefused("journal is not bound to the approved mutation root")
 
 
 def _entry_payload(entry: "JournalEntry", include_hash: bool = True) -> dict[str, object]:
@@ -215,6 +493,7 @@ def _entry_payload(entry: "JournalEntry", include_hash: bool = True) -> dict[str
         "inode": entry.filesystem_identity.inode,
         "object_type": entry.filesystem_identity.object_type.value,
         "is_reparse": entry.filesystem_identity.is_reparse,
+        "authoritative_path": entry.filesystem_identity.authoritative_path,
     }
     payload: dict[str, object] = {
         "schema": _JOURNAL_SCHEMA,
@@ -285,16 +564,24 @@ class AuditJournal:
     path: str
     disposable_path: str
     _capability: object | None = None
+    root_kind: str = "disposable"
 
     @property
     def is_engine_trusted(self) -> bool:
-        return self._capability is _MUTATION_ROOT_CAPABILITY and _path_is_within(self.path, self.disposable_path)
+        return (
+            self._capability is _MUTATION_ROOT_CAPABILITY
+            and self.root_kind in {"disposable", "approved-local"}
+            and _path_is_within(self.path, self.disposable_path)
+        )
 
     def _check_path(self) -> None:
         if not self.is_engine_trusted:
             raise JournalError("journal is not bound to an engine-issued disposable root")
         try:
-            _verify_marked_disposable_path(self.disposable_path)
+            if self.root_kind == "disposable":
+                _verify_marked_disposable_path(self.disposable_path)
+            else:
+                _verify_approved_local_root(self.disposable_path)
         except MutationRefused as error:
             raise JournalError("journal disposable root is not a valid marked temporary root") from error
         parent = os.path.dirname(self.path)
@@ -307,6 +594,14 @@ class AuditJournal:
                 raise JournalError("journal could not be observed") from error
             if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
                 raise JournalError("journal path is linked, reparse-backed, or not a file")
+
+    def claim_file_path(self, plan_id: str, plan_item_id: str) -> str:
+        self._check_path()
+        name = f"{_CLAIM_FILE_PREFIX}{_digest((plan_id, plan_item_id))}{_CLAIM_FILE_SUFFIX}"
+        path = _canonical_absolute_path(os.path.join(os.path.dirname(self.path), name))
+        if path is None or not _path_is_within(path, self.disposable_path):
+            raise JournalError("authorization claim path escaped the mutation root")
+        return path
 
     def read_entries(self) -> tuple[JournalEntry, ...]:
         self._check_path()
@@ -336,6 +631,7 @@ class AuditJournal:
                     FilesystemIdentity(
                         identity_payload["device"], identity_payload["inode"],
                         NodeKind(identity_payload["object_type"]), identity_payload["is_reparse"],
+                        identity_payload.get("authoritative_path"),
                     ),
                     payload["timestamp"], QuarantineState(payload["status"]),
                     payload["recovery_id"], payload.get("failure_reason"), payload["record_hash"],
@@ -374,16 +670,15 @@ class AuditJournal:
             raise JournalError("journal append failed") from error
 
 
-def create_audit_journal(root: DisposableRoot, relative_path: str = ".dwi-journal.jsonl") -> AuditJournal:
-    if not root.is_engine_trusted:
-        raise MutationRefused("journal requires an engine-issued disposable root")
-    _verify_marked_disposable_path(root.path)
+def create_audit_journal(root: MutationRoot, relative_path: str = ".dwi-journal.jsonl") -> AuditJournal:
+    root_path = _verify_mutation_root(root)
     if not relative_path or os.path.isabs(relative_path) or "/" in relative_path or "\\" in relative_path or relative_path in {".", ".."}:
-        raise MutationRefused("journal path must be a simple relative child of the disposable root")
-    path = _canonical_absolute_path(os.path.join(root.path, relative_path))
-    if path is None or not _path_is_within(path, root.path):
-        raise MutationRefused("journal path escaped the disposable root")
-    return AuditJournal(path, root.path, _MUTATION_ROOT_CAPABILITY)
+        raise MutationRefused("journal path must be a simple relative child of the approved mutation root")
+    path = _canonical_absolute_path(os.path.join(root_path, relative_path))
+    if path is None or not _path_is_within(path, root_path):
+        raise MutationRefused("journal path escaped the approved mutation root")
+    kind = "disposable" if isinstance(root, DisposableRoot) else "approved-local"
+    return AuditJournal(path, root_path, _MUTATION_ROOT_CAPABILITY, kind)
 
 
 @dataclass(frozen=True)
@@ -447,6 +742,49 @@ def _make_entry(
     )
 
 
+def _claim_authorization_item(
+    journal: AuditJournal,
+    plan: CleanupPlan,
+    item: object,
+    authorization: ExecutionAuthorization,
+    *,
+    timestamp: str,
+) -> tuple[bool, str | None]:
+    """Atomically claim one item before emitting mutation lifecycle records."""
+
+    plan_item_id = getattr(item, "plan_item_id", None)
+    if not isinstance(plan_item_id, PlanItemId):
+        return False, "authorization claim requires a plan item"
+    try:
+        # Validate the existing journal before claiming. A corrupt journal must
+        # not receive a new claim or a misleading FAILED lifecycle record.
+        journal.read_entries()
+        if not authorization._consume_item(plan.plan_id, plan_item_id):
+            return False, "execution authorization item is stale, consumed, or replayed"
+        claim_path = journal.claim_file_path(plan.plan_id.value, plan_item_id.value)
+        payload = _canonical_json({
+            "schema": _JOURNAL_SCHEMA,
+            "plan_id": plan.plan_id.value,
+            "plan_item_id": plan_item_id.value,
+            "authorization_identity": authorization.authorization_token,
+            "timestamp": timestamp,
+        }).encode("utf-8")
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        descriptor = os.open(claim_path, flags, 0o600)
+        try:
+            os.write(descriptor, payload)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        return True, None
+    except FileExistsError:
+        return False, "execution authorization item is already claimed"
+    except (JournalError, OSError) as error:
+        return False, f"authorization claim failed: {error}"
+
+
 def _record_from_entry(entry: JournalEntry) -> QuarantineRecord:
     metadata = RecoveryMetadata(
         entry.recovery_id,
@@ -505,19 +843,41 @@ def _recoverable_entry(
 def _move_reality(source: str, destination: str, expected: FilesystemIdentity) -> str:
     source_identity, source_error = _observe_identity(source)
     destination_identity, destination_error = _observe_identity(destination)
-    if destination_identity == expected and source_error is not None:
+    if destination_identity is not None and _same_identity(expected, destination_identity) and source_error is not None:
         return "committed"
-    if source_identity == expected and destination_error is not None:
+    if source_identity is not None and _same_identity(expected, source_identity) and destination_error is not None:
         return "not_committed"
     return "ambiguous"
 
 
-def _validate_plan_item_before_move(plan: CleanupPlan, item_path: str, expected: FilesystemIdentity, root: DisposableRoot, quarantine_root: QuarantineRoot) -> tuple[FilesystemIdentity | None, str | None]:
+def _protected_mutation_target(path: str, authority: AuthoritativePath | None = None) -> bool:
+    canonical = _canonical_absolute_path(path)
+    if canonical is None or _is_unc_path(canonical):
+        return True
+    if any(component.casefold() == ".git" for component in canonical.split("\\")):
+        return True
+    authority = authority or _authoritative_path(canonical)
+    if authority is None:
+        return True
+    return _is_protected_authoritative_path(authority)
+
+
+def _validate_plan_item_before_move(
+    plan: CleanupPlan,
+    item_path: str,
+    expected: FilesystemIdentity,
+    root: MutationRoot,
+    quarantine_root: QuarantineRoot,
+) -> tuple[FilesystemIdentity | None, str | None]:
     _require_mutation_roots(root, quarantine_root)
     if not _path_is_within(plan.approved_root.path, root.path) or not _path_is_within(item_path, root.path):
-        return None, "plan root or item path is outside the disposable root"
+        return None, "plan root or item path is outside the approved mutation root"
     if not _path_is_within(item_path, plan.approved_root.path):
         return None, "plan item path is outside its approved root"
+    if _path_is_within(item_path, quarantine_root.path):
+        return None, "mutation target is inside the quarantine root"
+    if _protected_mutation_target(item_path):
+        return None, "mutation target is protected or belongs to repository metadata"
     try:
         _validate_ordinary_ancestry(plan.approved_root.path, root.path)
         _validate_ordinary_ancestry(item_path, plan.approved_root.path)
@@ -530,6 +890,22 @@ def _validate_plan_item_before_move(plan: CleanupPlan, item_path: str, expected:
         return None, "path identity/type/reparse state changed before mutation"
     if not identity.is_suitable_for_planning:
         return None, "path is no longer an ordinary directory with a valid identity"
+    if expected.authoritative_path is None:
+        return None, "planned filesystem identity lacks an authoritative final path"
+    authority = _authoritative_path(item_path)
+    if authority is None or authority.final_path != expected.authoritative_path:
+        return None, "path authoritative identity changed or could not be established"
+    root_authority = _authoritative_path(root.path)
+    plan_root_authority = _authoritative_path(plan.approved_root.path)
+    if (
+        root_authority is None
+        or plan_root_authority is None
+        or not _path_is_within(authority.final_path, root_authority.final_path)
+        or not _path_is_within(authority.final_path, plan_root_authority.final_path)
+    ):
+        return None, "path authoritative identity escaped its approved root"
+    if _protected_mutation_target(item_path, authority):
+        return None, "mutation target is protected or belongs to repository metadata"
     quarantine_metadata = _safe_directory_metadata(quarantine_root.path)
     if getattr(identity, "device", None) != getattr(quarantine_metadata, "st_dev", None):
         return None, "source and quarantine roots are not on the same filesystem"
@@ -540,7 +916,7 @@ def quarantine_plan(
     plan: CleanupPlan,
     validation: PlanValidation,
     authorization: ExecutionAuthorization,
-    disposable_root: DisposableRoot,
+    disposable_root: MutationRoot,
     quarantine_root: QuarantineRoot,
     journal: AuditJournal,
     *,
@@ -553,7 +929,20 @@ def quarantine_plan(
     _require_mutation_roots(disposable_root, quarantine_root)
     _require_bound_journal(journal, disposable_root)
     item_ids = tuple(item.plan_item_id for item in plan.items)
-    if not authorization.is_authorized or not validation.is_valid or not authorization.matches_validation(validation) or authorization.plan_id != plan.plan_id or authorization.authorized_item_ids != item_ids:
+    proof = validation._proof if isinstance(validation, PlanValidation) else None
+    expected_validated_snapshots = tuple(sorted(
+        ((item.plan_item_id, item.snapshot) for item in plan.items),
+        key=lambda item: item[0].value,
+    ))
+    if (
+        not authorization.is_authorized
+        or not validation.is_valid
+        or not authorization.matches_validation(validation)
+        or authorization.plan_id != plan.plan_id
+        or authorization.authorized_item_ids != item_ids
+        or proof is None
+        or proof.validated_snapshots != expected_validated_snapshots
+    ):
         return QuarantineResult(plan.plan_id, (), (MutationFailure(None, QuarantineState.FAILED, "plan item authorization is missing, forged, stale, or mismatched"),))
 
     records: list[QuarantineRecord] = []
@@ -561,6 +950,7 @@ def quarantine_plan(
     for item in plan.items:
         snapshot = item.snapshot
         mutation_committed = False
+        claim_record_written = False
         quarantining: JournalEntry | None = None
         quarantined: JournalEntry | None = None
         recovery_id = f"recovery-{_digest((plan.plan_id, item.plan_item_id))[:32]}"
@@ -569,6 +959,36 @@ def quarantine_plan(
             failures.append(MutationFailure(item.plan_item_id, QuarantineState.FAILED, "quarantine destination escaped the approved root"))
             continue
         try:
+            identity, reason = _validate_plan_item_before_move(plan, snapshot.path, snapshot.filesystem_identity, disposable_root, quarantine_root)
+            if reason is not None or identity is None:
+                raise MutationRefused(reason or "pre-mutation validation failed")
+            if _lexists(quarantine_path):
+                raise MutationRefused("quarantine destination already exists; overwrite is forbidden")
+            claimed, claim_reason = _claim_authorization_item(
+                journal,
+                plan,
+                item,
+                authorization,
+                timestamp=clock(),
+            )
+            if not claimed:
+                failures.append(MutationFailure(item.plan_item_id, QuarantineState.FAILED, claim_reason or "authorization claim was rejected"))
+                continue
+            claimed_entry = _make_entry(
+                journal,
+                plan_id=plan.plan_id.value,
+                plan_item_id=item.plan_item_id.value,
+                validation_identity=validation.validation_token,
+                authorization_identity=authorization.authorization_token,
+                original_path=snapshot.path,
+                quarantine_path=quarantine_path,
+                filesystem_identity=identity,
+                status=QuarantineState.AUTHORIZATION_CLAIMED,
+                recovery_id=recovery_id,
+                timestamp=clock(),
+            )
+            journal.append(claimed_entry)
+            claim_record_written = True
             planned = _make_entry(
                 journal,
                 plan_id=plan.plan_id.value,
@@ -577,17 +997,12 @@ def quarantine_plan(
                 authorization_identity=authorization.authorization_token,
                 original_path=snapshot.path,
                 quarantine_path=quarantine_path,
-                filesystem_identity=snapshot.filesystem_identity,
+                filesystem_identity=identity,
                 status=QuarantineState.PLANNED,
                 recovery_id=recovery_id,
                 timestamp=clock(),
             )
             journal.append(planned)
-            identity, reason = _validate_plan_item_before_move(plan, snapshot.path, snapshot.filesystem_identity, disposable_root, quarantine_root)
-            if reason is not None or identity is None:
-                raise MutationRefused(reason or "pre-mutation validation failed")
-            if _lexists(quarantine_path):
-                raise MutationRefused("quarantine destination already exists; overwrite is forbidden")
             quarantining = _make_entry(
                 journal,
                 plan_id=plan.plan_id.value,
@@ -604,6 +1019,9 @@ def quarantine_plan(
             journal.append(quarantining)
             if os.name != "nt":
                 raise MutationRefused("safe non-overwriting Windows rename is required")
+            identity, reason = _validate_plan_item_before_move(plan, snapshot.path, snapshot.filesystem_identity, disposable_root, quarantine_root)
+            if reason is not None or identity is None:
+                raise MutationRefused(reason or "immediate pre-mutation validation failed")
             os.rename(snapshot.path, quarantine_path)
             mutation_committed = True
             quarantined = _make_entry(
@@ -635,6 +1053,9 @@ def quarantine_plan(
             records.append(_record_from_entry(quarantined))
         except (MutationRefused, JournalError, OSError) as error:
             reason = str(error)
+            if not claim_record_written and not mutation_committed:
+                failures.append(MutationFailure(item.plan_item_id, QuarantineState.FAILED, reason))
+                continue
             if mutation_committed or _move_reality(snapshot.path, quarantine_path, snapshot.filesystem_identity) == "committed":
                 base = quarantined or quarantining
                 if base is not None:
@@ -672,7 +1093,7 @@ def quarantine_plan(
 
 def reconcile_pending_operations(
     journal: AuditJournal,
-    disposable_root: DisposableRoot,
+    disposable_root: MutationRoot,
     quarantine_root: QuarantineRoot,
     *,
     clock: MutationClock = _utc_now,
@@ -687,6 +1108,27 @@ def reconcile_pending_operations(
         latest[entry.recovery_id] = entry
     failures: list[str] = []
     for recovery_id, entry in sorted(latest.items()):
+        if entry.status is QuarantineState.AUTHORIZATION_CLAIMED:
+            recovered = _make_entry(
+                journal,
+                plan_id=entry.plan_id,
+                plan_item_id=entry.plan_item_id,
+                validation_identity=entry.validation_identity,
+                authorization_identity=entry.authorization_identity,
+                original_path=entry.original_path,
+                quarantine_path=entry.quarantine_path,
+                filesystem_identity=entry.filesystem_identity,
+                status=QuarantineState.FAILED,
+                recovery_id=entry.recovery_id,
+                timestamp=clock(),
+                failure_reason="authorization was claimed but mutation did not begin",
+            )
+            entries.append(recovered)
+            try:
+                journal.append(recovered)
+            except JournalError as error:
+                failures.append(f"{recovery_id}: claim recovery could not be journaled: {error}")
+            continue
         if entry.status not in {QuarantineState.QUARANTINING, QuarantineState.RESTORING}:
             continue
         source = entry.original_path
@@ -697,20 +1139,20 @@ def reconcile_pending_operations(
             source_identity, source_error = _observe_identity(source)
             destination_identity, destination_error = _observe_identity(destination)
             if entry.status is QuarantineState.QUARANTINING:
-                if destination_identity == entry.filesystem_identity and source_error is not None:
+                if destination_identity is not None and _same_identity(entry.filesystem_identity, destination_identity) and source_error is not None:
                     status = QuarantineState.QUARANTINE_COMMITTED_UNJOURNALED
                     reason = "recovered quarantine rename committed before final journal update"
-                elif source_identity == entry.filesystem_identity and destination_error is not None:
+                elif source_identity is not None and _same_identity(entry.filesystem_identity, source_identity) and destination_error is not None:
                     status = QuarantineState.FAILED
                     reason = "recovered move did not complete"
                 else:
                     status = QuarantineState.FAILED
                     reason = "crash-window state is ambiguous; no move was attempted"
             else:
-                if source_identity == entry.filesystem_identity and destination_error is not None:
+                if source_identity is not None and _same_identity(entry.filesystem_identity, source_identity) and destination_error is not None:
                     status = QuarantineState.RESTORE_COMMITTED_UNJOURNALED
                     reason = "recovered restore rename committed before final journal update"
-                elif destination_identity == entry.filesystem_identity and source_error is not None:
+                elif destination_identity is not None and _same_identity(entry.filesystem_identity, destination_identity) and source_error is not None:
                     status = QuarantineState.FAILED
                     reason = "recovered restore did not complete"
                 else:
@@ -743,7 +1185,7 @@ def reconcile_pending_operations(
 def restore_recovery(
     recovery_id: str,
     journal: AuditJournal,
-    disposable_root: DisposableRoot,
+    disposable_root: MutationRoot,
     quarantine_root: QuarantineRoot,
     *,
     clock: MutationClock = _utc_now,
@@ -780,6 +1222,20 @@ def restore_recovery(
         parent = os.path.dirname(original)
         _validate_ordinary_ancestry(parent, disposable_root.path)
         _validate_ordinary_ancestry(destination, quarantine_root.path)
+        destination_authority = _authoritative_path(destination)
+        parent_authority = _authoritative_path(parent)
+        quarantine_authority = _authoritative_path(quarantine_root.path)
+        root_authority = _authoritative_path(disposable_root.path)
+        if (
+            destination_authority is None
+            or parent_authority is None
+            or quarantine_authority is None
+            or root_authority is None
+            or not _path_is_within(destination_authority.final_path, quarantine_authority.final_path)
+            or not _path_is_within(parent_authority.final_path, root_authority.final_path)
+            or _protected_mutation_target(destination, destination_authority)
+        ):
+            raise MutationRefused("restore authoritative path validation failed")
         if _lexists(original):
             raise MutationRefused("original destination already exists; overwrite is forbidden")
         identity, error = _observe_identity(destination)

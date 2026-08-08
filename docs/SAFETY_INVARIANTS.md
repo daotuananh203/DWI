@@ -63,8 +63,9 @@ failed evidence cannot authorize execution.
 
 26. `ExecutionAuthorization` is separate from `CleanupPlan` and
 `PlanValidation`, binds an engine-issued proof and successful validation state,
-and cannot be reused after relevant state changes. Authorization itself
-performs no mutation.
+and has private one-shot plan-item consumption. A consumed item cannot be
+replayed, while unconsumed items in a validated multi-item plan remain
+independently attributable. Authorization itself performs no mutation.
 
 27. Every future mutation attempt must be attributable to an engine-generated
 plan item and produce an auditable journal record. The first mutation release
@@ -78,8 +79,9 @@ state.
 
 29. Every cleanup plan retains an engine-derived canonical approved-root
 binding. Candidate paths must be absolute, normalized, contained by that root,
-and backed by a valid positive filesystem identity; relative, escaping,
-mismatched, symlink, junction, and reparse-backed paths are not plannable.
+and backed by a valid positive filesystem identity with a lexical-to-
+authoritative final-path binding; relative, escaping, mismatched, symlink,
+junction, and reparse-backed paths are not plannable.
 
 30. `PlanValidation` success requires an engine-issued capability bound to the
 exact immutable plan, current snapshot set, trusted revalidation context, and
@@ -99,6 +101,40 @@ chains, edits, duplicate lines, missing middle records, reordering, and
 incomplete final lines fail closed. This is corruption/tamper evidence, not
 authenticated cryptographic trust; complete-journal rewrite attacks remain an
 external trust-boundary concern.
+
+33. A real-filesystem mutation root must be an engine-issued approved local
+directory on a fixed Windows volume. Filesystem roots, UNC/network/mapped or
+unknown volumes, system/Program Files/ProgramData locations, and linked or
+reparse-backed roots are denied. The root capability is bound to the exact
+plan-approved root; it is not an arbitrary path permission.
+
+34. Immediately before a rename, the mutation layer must revalidate the exact
+plan item, canonical/root-bound path, ordinary ancestry, existence, positive
+filesystem identity, directory type, reparse state, same-volume quarantine,
+validated evidence/policy snapshot, and authorization item. Any uncertainty,
+replacement, collision, lock/permission failure, or race blocks without a
+copy/delete fallback.
+
+35. The internal v0.3 reversible strategy is DWI-managed same-volume
+quarantine with journaled recovery metadata. Windows Recycle Bin integration is
+not used until deterministic recovery identity, auditability, and restart-safe
+Undo semantics can be demonstrated without weakening these invariants.
+
+36. Mutation planning and execution bind both the lexical requested path and
+the authoritative Windows final path. The final path is obtained through a
+Windows handle/final-path API only after ordinary ancestry and reparse checks;
+if it cannot be established, mutation is denied. Short-name aliases such as
+8.3 paths are compared using the authoritative final path and cannot bypass
+protected-root policy.
+
+37. A mutation authorization item must be claimed atomically before any
+`PLANNED` or `QUARANTINING` record is written. In-process claims are one-shot;
+the local filesystem claim file prevents a second process from claiming the
+same plan item. A claimed-but-not-started operation is reconciled explicitly;
+rejected replay does not append a misleading lifecycle failure.
+An orphan claim file may remain if the process stops after the atomic claim but
+before `AUTHORIZATION_CLAIMED` is journaled. This is deferred fail-closed
+availability debt and must be reconciled before public cleanup release.
 
 ## Future executor invariants
 
@@ -152,13 +188,14 @@ The following questions must not be collapsed into one field:
 
 ## Review standard
 
-The current v0.3 layer includes a separate mutation primitive, but it is hard
-bounded to explicitly marked disposable directories under the operating-system
-temporary directory. It performs only authorized, reversible quarantine/restore
-moves and append-only journal writes; it does not mutate user workspaces or
-provide permanent deletion. Any real cleanup executor requires a separate
-approved design covering confirmation, recovery, journaling, race conditions,
-and failure handling.
+The current v0.3 layer includes a separate internal mutation primitive. It
+supports explicitly marked disposable directories for tests and an
+engine-issued approved-local-root gate for future real-Windows validation. It
+performs only authorized, reversible same-volume quarantine/restore moves and
+append-only journal writes; it has no public user-workspace cleanup interface,
+no permanent deletion, and no copy/delete fallback. Any public cleanup
+executor still requires a separate approved design covering confirmation,
+recovery, journaling, race conditions, and failure handling.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` are not execution authorization. A
 future executor must require an immutable engine-generated plan, immediate
