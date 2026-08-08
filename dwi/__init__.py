@@ -45,6 +45,12 @@ from .pytest_cache import (
     inspect_pytest_cache,
     interpret_pytest_cache,
 )
+from .mypy_cache import (
+    MypyCacheDetection,
+    MypyCacheInterpretation,
+    inspect_mypy_cache,
+    interpret_mypy_cache,
+)
 
 __all__ = [
     "ActionEligibility",
@@ -90,4 +96,8 @@ __all__ = [
     "PytestCacheInterpretation",
     "inspect_pytest_cache",
     "interpret_pytest_cache",
+    "MypyCacheDetection",
+    "MypyCacheInterpretation",
+    "inspect_mypy_cache",
+    "interpret_mypy_cache",
 ]

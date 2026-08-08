@@ -48,6 +48,8 @@ For the first `__pycache__` detector, the contract additionally records the exac
 
 The `.pytest_cache` detector likewise records its exact directory name separately from raw `CACHEDIR.TAG`, `README.md`, and direct layout observations. Marker names alone do not establish pytest provenance or a safety conclusion.
 
+The `.mypy_cache` detector records its exact directory name separately from raw version-directory and module metadata/data observations. An exact name, a generic cache marker, or an incomplete metadata/data pair does not establish mypy provenance or a safety conclusion.
+
 The `.pytest_cache` detector likewise records its exact directory name separately from raw `CACHEDIR.TAG`, `README.md`, and direct layout observations. Marker names alone do not establish pytest provenance or a safety conclusion.
 
 ## Open catalog questions

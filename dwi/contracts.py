@@ -105,7 +105,11 @@ _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
         "pytest_cache_marker",
         "cache_layout_observation",
     ),
-    ArtifactKind.MYPY_CACHE: ("mypy_cache_marker", "cache_layout_observation"),
+    ArtifactKind.MYPY_CACHE: (
+        "mypy_cache_directory_name_observation",
+        "mypy_cache_marker",
+        "cache_layout_observation",
+    ),
     ArtifactKind.RUFF_CACHE: ("ruff_cache_marker", "cache_layout_observation"),
     ArtifactKind.PYTHON_VENV: (
         "pyvenv_cfg_marker",
@@ -155,6 +159,7 @@ _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
             "Evidence keys describe observations only; no key maps directly to a domain state or RiskLabel.",
             "PYCACHE includes an exact directory-name observation so a name-only match cannot establish artifact identity.",
             "A source reference observation is distinct from recreation-input availability evidence.",
+            "MYPY_CACHE includes an exact directory-name observation and requires structural cache evidence; a name-only match is insufficient.",
             "Confirmed references, uncertainty, or conflicts must fail closed in policy evaluation.",
         ),
     )
