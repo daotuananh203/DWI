@@ -110,7 +110,11 @@ _ARTIFACT_KEYS: dict[ArtifactKind, tuple[str, ...]] = {
         "mypy_cache_marker",
         "cache_layout_observation",
     ),
-    ArtifactKind.RUFF_CACHE: ("ruff_cache_marker", "cache_layout_observation"),
+    ArtifactKind.RUFF_CACHE: (
+        "ruff_cache_directory_name_observation",
+        "ruff_cache_marker",
+        "cache_layout_observation",
+    ),
     ArtifactKind.PYTHON_VENV: (
         "pyvenv_cfg_marker",
         "interpreter_layout_observation",
@@ -160,6 +164,7 @@ _CONTRACTS: dict[ArtifactKind, EvidenceContract] = {
             "PYCACHE includes an exact directory-name observation so a name-only match cannot establish artifact identity.",
             "A source reference observation is distinct from recreation-input availability evidence.",
             "MYPY_CACHE includes an exact directory-name observation and requires structural cache evidence; a name-only match is insufficient.",
+            "RUFF_CACHE includes an exact directory-name observation and requires both supported root markers and versioned cache layout evidence.",
             "Confirmed references, uncertainty, or conflicts must fail closed in policy evaluation.",
         ),
     )

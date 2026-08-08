@@ -51,6 +51,12 @@ from .mypy_cache import (
     inspect_mypy_cache,
     interpret_mypy_cache,
 )
+from .ruff_cache import (
+    RuffCacheDetection,
+    RuffCacheInterpretation,
+    inspect_ruff_cache,
+    interpret_ruff_cache,
+)
 
 __all__ = [
     "ActionEligibility",
@@ -100,4 +106,8 @@ __all__ = [
     "MypyCacheInterpretation",
     "inspect_mypy_cache",
     "interpret_mypy_cache",
+    "RuffCacheDetection",
+    "RuffCacheInterpretation",
+    "inspect_ruff_cache",
+    "interpret_ruff_cache",
 ]
