@@ -83,6 +83,10 @@ from .node_artifacts import (
     interpret_node_modules,
 )
 from .dispatcher import AnalysisResult, analyze_candidate, dispatch_analysis
+from .pipeline import CandidateEligibility, CandidateSelection, Finding, evaluate_analysis, select_candidate
+from .size import SizeObservation, collect_size
+from .scanner import WorkspaceScan, WorkspaceScanError, WorkspaceSummary, scan_workspace
+from .report import finding_to_dict, json_report, scan_to_dict, table_report
 
 __all__ = [
     "ActionEligibility",
@@ -160,4 +164,19 @@ __all__ = [
     "AnalysisResult",
     "analyze_candidate",
     "dispatch_analysis",
+    "CandidateEligibility",
+    "CandidateSelection",
+    "Finding",
+    "evaluate_analysis",
+    "select_candidate",
+    "SizeObservation",
+    "collect_size",
+    "WorkspaceScan",
+    "WorkspaceScanError",
+    "WorkspaceSummary",
+    "scan_workspace",
+    "json_report",
+    "finding_to_dict",
+    "scan_to_dict",
+    "table_report",
 ]

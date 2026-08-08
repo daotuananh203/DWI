@@ -18,6 +18,15 @@
 - Explicit single-candidate dispatcher with no recursive discovery.
 - Synthetic and temporary-directory adversarial tests for the bounded analyzers.
 
+## Completed end-to-end reporting layer
+
+- Deterministic bounded recursive discovery below one explicit workspace root.
+- Candidate-selection and Safety Policy adapter producing auditable findings.
+- Read-only candidate size accounting with incomplete/failure states.
+- Standard-library table and JSON CLI reports.
+- Synthetic tests for discovery boundaries, size behavior, selection, policy
+  hard gates, deterministic output, and CLI errors.
+
 ## MVP
 
 The MVP remains Windows-only and analysis/reporting-only:

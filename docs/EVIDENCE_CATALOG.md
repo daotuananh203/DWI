@@ -88,3 +88,18 @@ The `.pytest_cache` detector likewise records its exact directory name separatel
 - Which exact lockfile formats and package-manager stores are in MVP scope?
 - What minimum Windows process/activity evidence can be collected reliably without administrative privileges?
 - How should shared package stores be represented when one project can be rebuilt but other projects may depend on the same data?
+
+## End-to-end bounded reporting notes
+
+The workspace scanner accepts one explicit ordinary root and discovers only the
+supported artifact names. It does not follow symlinks, junctions, or reparse
+points, and it does not recurse into an identified candidate for further
+discovery. A candidate's size is a separate read-only observation: known bytes
+are reported only when traversal is complete, while skipped links and read
+failures make the size incomplete. Size never changes a risk label.
+
+`.git` directories and `.git` files are protected/context observations and are
+not `CleanupCandidate` inputs. The scanner records their paths but does not
+assign a reclaim conclusion to them. Rejected candidate-selection results are
+reported with an effective `REVIEW_REQUIRED` posture and retain their raw
+evidence; they do not receive a Safety Policy decision until admitted.

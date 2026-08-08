@@ -12,11 +12,22 @@ DWI is intended to answer:
 
 ## Current status
 
-The typed domain model, detector-neutral evidence contracts, four cache detectors,
-the bounded `.venv` and Node.js artifact analyzers, and an explicit single-path
-dispatcher are implemented. The MVP remains analysis-and-reporting-only. It does
-not recursively scan workspaces, delete files, call an LLM, access a cloud
-service, or provide a UI.
+The typed domain model, detector-neutral evidence contracts, bounded artifact
+analyzers, explicit dispatcher, workspace scanner, size accounting, and
+standard-library CLI/report adapters are implemented. The MVP remains
+analysis-and-reporting-only. It does not delete files, call an LLM, access a
+cloud service, or provide a UI.
+
+Run a bounded report from one explicit workspace root:
+
+```text
+python -m dwi scan PATH
+python -m dwi scan PATH --json
+```
+
+The scanner recognizes only the documented artifact names, does not follow
+links or reparse points, excludes `.git` from cleanup candidates, and reports
+unknown or incomplete observations conservatively.
 
 Read the documents in this order:
 

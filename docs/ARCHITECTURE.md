@@ -13,7 +13,10 @@ Filesystem observations
 Evidence collection
         |
         v
-Candidate selection and artifact analysis
+Bounded candidate discovery + explicit selection
+        |
+        v
+Artifact analysis / interpretation
         |
         v
 Ordered Safety Policy gates
@@ -32,6 +35,8 @@ The first implementation should use simple typed Python modules. It must not beg
 ## Responsibilities
 
 - **Filesystem observation:** reads paths and metadata, records failures explicitly, and does not decide safety.
+- **Workspace discovery:** accepts one explicit ordinary root, visits supported descendants in deterministic order, does not follow symlinks/junctions/reparse points, and stops discovery below an identified candidate.
+- **Size accounting:** recursively counts regular files inside an identified candidate without following links; incomplete counts and failures remain explicit and size never changes `RiskLabel`.
 - **Evidence collection:** normalizes observations into structured evidence with provenance and status.
 - **Candidate selection:** prevents arbitrary files, source trees, and project roots from entering the cleanup-analysis path.
 - **Git boundary:** observes `.git` directories and `.git` files for protection/context, but excludes them from `CleanupCandidate` inputs. `NEVER_DELETE` is a protection outcome, not reclaim eligibility.
@@ -50,6 +55,13 @@ system; an unknown basename returns no analysis result.
 - **Safety Policy:** applies ordered gates and produces the risk label, action eligibility, and rule trace.
 - **Reclaim ranking:** estimates reclaim priority independently from safety.
 - **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions.
+
+The scanner adapts each dispatcher result through a single-candidate selection
+boundary. Weak or ambiguous artifact identity is represented as a rejected
+finding with effective `REVIEW_REQUIRED` posture; it is not promoted to a
+cleanup candidate or silently passed to policy. Accepted results preserve raw
+evidence and interpretation, then invoke the existing Safety Policy. `.git`
+directories and `.git` files are recorded as protected context only.
 
 ## Boundary rules
 
@@ -72,3 +84,7 @@ Evaluation inputs must be explicit and serializable enough for tests and reports
 ## Windows scope
 
 The MVP targets Windows filesystem behavior. Junctions, reparse points, symlinks, permissions, and `.git` files must be treated as first-class uncertainty sources. Cross-platform behavior is deferred until the Windows semantics are specified and tested.
+
+The current CLI is reporting-only. It has no deletion, cleanup planning,
+undo/trash, process-wide activity scan, cross-project reachability, or
+project-wide package-manager analysis.
