@@ -53,23 +53,33 @@ service work, or network discovery by default.
 - Internal human-facing CLI adapter over that service, with exact confirmation,
   deterministic table/JSON review, explicit exit states, quarantine/journal,
   and same-process Undo by recovery identifier.
-- No public release, Desktop/MCP cleanup interface, permanent deletion,
+- No public release, MCP cleanup interface, permanent deletion,
   Windows Recycle Bin integration, cross-process capability persistence, or
   arbitrary raw-path mutation API.
 
 This remains an internal milestone; it is not a public release.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not independently authorize
-execution. The next bounded task is a direct audit of the human CLI cleanup
-flow before beginning Desktop integration. Permanent deletion remains out of
-scope until explicitly authorized.
+execution. Desktop v0.4 is a native Tkinter presentation/orchestration layer
+over the same engine and application service. Permanent deletion remains out
+of scope until explicitly authorized.
 
 ## v0.4 — Desktop
 
-- Desktop UI over the same core engine.
-- System overview.
-- Findings and explanations.
-- Cleanup-plan review.
+- Native stdlib Tkinter Desktop over the same core engine and application
+  service.
+- System scan overview with roots, partial/failed/denied boundaries, limits,
+  cancellation, known/partial/reclaimable byte accounting, and Git context.
+- Findings dashboard with RiskLabel/ActionEligibility separation,
+  filtering/sorting/search, size completeness, and structured explanations.
+- Exact CleanupSession/HumanConfirmation review, fresh engine revalidation,
+  Quarantine + Journal + Undo outcomes, reconciliation-required UX, and
+  recovery identity listing.
+- Explicit controller/state model, one-worker background boundary, EN/VI
+  packaged resources, deterministic desktop entry point, and disposable-fixture
+  developer smoke path.
+- Trusted in-process capability model only; no serialized capabilities, MCP,
+  telemetry, cloud/API calls, or permanent deletion.
 
 This remains an internal milestone; it is not a public release.
 

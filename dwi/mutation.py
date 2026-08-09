@@ -1681,12 +1681,18 @@ def restore_recovery(
     quarantine_root: QuarantineRoot,
     *,
     clock: MutationClock = _utc_now,
+    phase_callback: Callable[[str], None] | None = None,
+    cancellation_checkpoint: Callable[[], None] | None = None,
 ) -> RestoreResult:
     """Restore one valid journaled recovery without overwriting any destination."""
 
     _require_mutation_roots(disposable_root, quarantine_root)
     if not recovery_id.strip():
         return RestoreResult(recovery_id, QuarantineState.FAILED, None, "recovery identifier is empty")
+    if cancellation_checkpoint is not None:
+        cancellation_checkpoint()
+    if phase_callback is not None:
+        phase_callback("reconciling")
     reconciliation = reconcile_pending_operations(journal, disposable_root, quarantine_root, clock=clock)
     entries = tuple(entry for entry in reconciliation.entries if entry.recovery_id == recovery_id)
     if not entries:
@@ -1735,6 +1741,10 @@ def restore_recovery(
             raise MutationRefused(error or "quarantine item is missing")
         if not _same_identity(quarantined.filesystem_identity, identity) or not identity.is_suitable_for_planning:
             raise MutationRefused("quarantine item identity/type/reparse state changed")
+        if phase_callback is not None:
+            # From this point the journal/mutation lifecycle is owned by the
+            # restore operation. There is no cancellation checkpoint after it.
+            phase_callback("authorized_mutation")
         restoring = _make_entry(
             journal,
             plan_id=quarantined.plan_id,

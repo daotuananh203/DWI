@@ -214,14 +214,14 @@ The following questions must not be collapsed into one field:
 
 ## Review standard
 
-The current v0.3 layer includes a separate internal mutation primitive and an
+The current v0.4 layer includes a separate internal mutation primitive and an
 internal human CLI adapter. It
 supports explicitly marked disposable directories for tests and an
-engine-issued approved-local-root gate for future real-Windows validation. It
+engine-issued approved-local-root gate for real-Windows validation. It
 performs only authorized, reversible same-volume quarantine/restore moves and
-append-only journal writes; the CLI is single-process and pre-public, with no
-capability persistence, permanent deletion, or copy/delete fallback. Desktop
-and MCP cleanup interfaces remain absent. Any public cleanup
+append-only journal writes; the CLI and Desktop are single-process and
+pre-public, with no capability persistence, permanent deletion, or copy/delete
+fallback. MCP remains absent. Any public cleanup
 executor still requires a separate approved design covering confirmation,
 recovery, journaling, race conditions, and failure handling.
 

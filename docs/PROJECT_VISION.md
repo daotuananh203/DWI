@@ -50,8 +50,8 @@ machine and from explanation to safe, reversible, auditable cleanup.
 The MVP is deliberately narrow:
 
 - Windows only.
-- CLI/reporting interface, with an internal human-confirmed cleanup adapter in
-  v0.3; Desktop and MCP remain future interfaces.
+- CLI/reporting interface and the v0.4 native Desktop presentation layer, with
+  an internal human-confirmed cleanup adapter; MCP remains a future interface.
 - Python and Node.js artifact analysis.
 - Minimal Git awareness for protection and context, including `.git` directories and `.git` files.
 - Bounded System Intelligence discovery for approved local roots and
@@ -60,8 +60,8 @@ The MVP is deliberately narrow:
   deterministic cancellation, limits, and partial-result reporting.
 - Deterministic findings with structured evidence and explanations.
 - Four risk labels: `SAFE`, `REGENERATABLE`, `REVIEW_REQUIRED`, and `NEVER_DELETE`.
-- No permanent file deletion, automatic/background cleanup, desktop UI, web UI,
-  FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis,
+- No permanent file deletion, automatic/background cleanup, web UI, FastAPI,
+  MCP, LLM integration, Docker analysis, Hugging Face analysis,
   Ollama analysis, dynamic plugin discovery, or cloud features.
 
 The v0.3 scope remains offline-first and bounded. Its mutation capability is an

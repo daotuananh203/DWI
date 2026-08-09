@@ -109,9 +109,9 @@ handles a claimed-but-not-started state.
 
 The internal application service adds an exact review/confirmation gate and
 reports multi-item outcomes independently; it never implies transactionality.
-The human CLI is a single-process presentation/orchestration adapter. It uses
-an engine-issued recovery identifier for immediate Undo and does not persist or
-reconstruct trusted capabilities across processes.
+The human CLI and Desktop are single-process presentation/orchestration
+adapters. They use engine-issued recovery identifiers for immediate Undo and
+do not persist or reconstruct trusted capabilities across processes.
 
 ## Required behavior
 

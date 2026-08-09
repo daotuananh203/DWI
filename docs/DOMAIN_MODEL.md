@@ -313,3 +313,15 @@ Presentation localization is not part of the domain meaning. Human-facing
 English and Vietnamese text may vary, but machine-readable JSON keys, enums,
 `RiskLabel` values, MCP tool names, API/schema identifiers, and internal
 evidence keys remain stable English identifiers.
+
+## Desktop v0.4 boundary
+
+The Desktop state model is presentation state, not domain authority. It may
+hold an engine-produced `SystemScan`, `Finding` selection, exact
+`CleanupSession`/review, typed `HumanConfirmation`, application result, and
+engine-issued recovery identifiers for the active in-process session. It may
+not construct or serialize `TrustedScanContext`, `TrustedSnapshotSet`,
+`PlanValidation`, `ExecutionAuthorization`, or mutation capabilities. A
+partial, failed, denied, skipped, or conflicting scan remains visibly
+non-executable. Recovery is addressed by validated recovery identity only;
+there is no raw-path restore operation.

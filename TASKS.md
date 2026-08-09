@@ -2,70 +2,49 @@
 
 ## Current state
 
-The v0.1 Workspace Intelligence and v0.2 System Intelligence layers are
-frozen. The v0.3 Safe Cleanup contract layer defines immutable engine-generated
-cleanup plans, immediate snapshot revalidation, separate execution
-authorization, a real-Windows Mutation Safety Gate, and reversible
-quarantine/journal primitives.
+v0.1 Workspace Intelligence, v0.2 System Intelligence, v0.3 Safe Cleanup,
+the Windows Mutation Safety Gate, human-confirmed reversible cleanup, and the
+internal cleanup CLI are frozen. v0.4 Desktop is implemented as a native
+Tkinter presentation/orchestration layer over the same deterministic engine.
 
-All current behavior is covered by synthetic/tempdir and mocked-boundary
-tests.
+Desktop provides system scan overview, findings filtering and explanations,
+exact cleanup review, typed HumanConfirmation, fresh engine revalidation,
+Quarantine + Journal + Undo outcomes, reconciliation-required handling,
+background work/cancellation, EN/VI resources, and a deterministic
+`python -m dwi desktop` entry point. Desktop does not contain a safety engine,
+does not accept raw cleanup paths, and does not serialize trusted capabilities.
 
-The internal human-facing CLI now adapts the reviewed cleanup flow in one
-process. It is not a public release or a public general user-workspace
-executor, and
-there is still no Desktop or MCP adapter, LLM integration, telemetry,
-cloud/API access, background service, or dynamic plugin system. The CLI does
-not persist or accept engine capabilities across processes.
-System scanning remains bounded, read-only, offline-first, and developer-storage
-aware. Git remains structured protection/context only and is not a cleanup
-candidate. No public cleanup release or Desktop/MCP cleanup interface exists;
-permanent deletion is absent. Mutation is internal and requires the disposable-root boundary or the new engine-issued
-approved-local-root gate.
+The product remains internal/pre-public. Cleanup means reversible same-volume
+Quarantine + Journal + Undo; permanent deletion, telemetry, cloud/API access,
+and network mutation are absent. Desktop v0.4 uses the trusted in-process
+capability model. A stronger untrusted boundary is deferred to MCP.
 
 ## Current milestone boundary
 
-The v0.3 planning contract remains pure for plan creation, validation, and
-authorization: findings may become immutable proposals only with explicit
-engine-issued scan context/root bindings, current snapshots may be compared
-with a new trusted context, and authorization metadata may be issued only from
-engine-produced validation proof. Mutation additionally requires exact
-validated snapshots, a private one-shot authorization item, an approved local
-root, authoritative Windows final-path identity, and immediate
-identity/type/reparse/path revalidation. Authorization claims are established
-before mutation lifecycle records are written. The internal presentation-neutral
-application service adds exact review, human confirmation, fresh revalidation,
-and per-item execution reporting. The CLI only presents and orchestrates this
-service; it cannot construct trusted scan state, validation, authorization, or
-raw-path mutation requests. Valid
-orphan claims are journaled as claimed and failed without candidate or
-quarantine-payload mutation during restart reconciliation; malformed or
-unjournalable claims remain blocked and require review. Claim files are
-retained as replay locks. This pre-authorization reconciliation may append
-metadata for pre-existing DWI recovery state, but it cannot begin a new
-cleanup lifecycle or issue new authorization in the same invocation.
-
-Orphan claim files after a crash before `AUTHORIZATION_CLAIMED` are detected
-during restart reconciliation. Valid claims are journaled as claimed and
-failed by append-only metadata reconciliation without candidate or payload
-mutation; malformed or unjournalable claims remain blocked. A new cleanup
-authorization is not requested in that same invocation.
+The shared engine remains authoritative for evidence, interpretation,
+RiskLabel, ActionEligibility, CleanupPlan, PlanValidation,
+ExecutionAuthorization, mutation safety, journal state, reconciliation, and
+recovery identity. Desktop only presents these values and orchestrates the
+existing application/engine adapters. Incomplete, failed, denied, skipped, or
+conflicting scan observations remain visibly partial or blocked. The Desktop
+does not introduce persistence, a daemon, local RPC, cloud features, AI, or a
+second mutation path.
 
 ## Next task — exactly one
 
-- [ ] Directly audit the human CLI cleanup flow before beginning Desktop integration.
+- [ ] v0.5 MCP / Agent Integration with an explicit untrusted-interface boundary.
 
 ### Acceptance criteria
 
-- Audit the CLI `Finding/SystemScan -> CleanupPlan -> Review ->
+- Define and implement only opaque engine-issued handles for untrusted MCP
+  requests; never accept arbitrary raw-path cleanup targets.
+- Preserve the exact `Finding/SystemScan -> CleanupPlan -> Review ->
   HumanConfirmation -> fresh PlanValidation -> ExecutionAuthorization ->
-  Quarantine -> Journal -> Undo` flow, including output, exit states, exact
-  binding, one-process capability boundaries, and failure semantics.
-- Ensure the CLI remains presentation/orchestration only: no raw mutation path,
-  trusted state, validation, authorization, unsafe confirmation flag, or
-  cross-process capability serialization may enter through it. Preserve the
-  `CleanupPlan` -> `PlanValidation` -> `ExecutionAuthorization` chain.
-- Do not add permanent deletion, user-workspace cleanup, i18n runtime, or
-  dependencies.
+  Quarantine -> Journal -> Undo` chain.
+- Do not serialize or accept trusted capability/proof objects, and keep AI
+  outside deterministic safety and authorization decisions.
+- Preserve reconciliation fail-closed behavior, no permanent deletion,
+  offline-first privacy, and network-mutation denial.
 
-Future work is described in [docs/ROADMAP.md](docs/ROADMAP.md), but it is not authorized by this task list.
+Future work in [docs/ROADMAP.md](docs/ROADMAP.md) is not authorized until this
+is the single task in this file.

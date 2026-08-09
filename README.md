@@ -34,9 +34,11 @@ validation. An internal, presentation-neutral application service now
 orchestrates exact review, human confirmation, fresh revalidation, and
 per-item quarantine without accepting raw paths. An internal human-facing CLI
 adapter now presents that flow in one process; it is pre-public, does not
-serialize capabilities, and is not a raw-path mutation API. Desktop and MCP
-cleanup interfaces remain unimplemented, as do permanent deletion and LLM
-decision-path integration.
+serialize capabilities, and is not a raw-path mutation API. v0.4 Desktop now
+provides the same flow through a native Tkinter shell, controller/state model,
+background worker, EN/VI resources, findings explanations, and Recovery/Undo.
+MCP remains unimplemented, as do permanent deletion and LLM decision-path
+integration.
 
 Run a bounded report from one explicit workspace root:
 
@@ -47,7 +49,25 @@ python -m dwi scan-system --root PATH --allow-network
 python -m dwi scan-system --json
 python -m dwi cleanup PATH
 python -m dwi cleanup PATH --json --confirm-phrase "I reviewed this exact cleanup plan."
+python -m dwi desktop
 ```
+
+## Desktop v0.4
+
+Desktop is internal/pre-public and Windows-oriented. It is presentation plus
+orchestration over the frozen deterministic scan, Safety Policy, cleanup
+application, and mutation layers. It supports system overview, partial-scan
+visibility, findings filtering/search/sort, evidence and RuleTrace details,
+exact cleanup review and HumanConfirmation, fresh revalidation, per-item
+quarantine outcomes, reconciliation-required handling, and Recovery/Undo.
+
+The application uses the trusted in-process capability model. It never accepts
+a raw cleanup path, manufactures `RiskLabel` or `ActionEligibility`, creates
+`PlanValidation` or `ExecutionAuthorization`, serializes capabilities, or
+performs filesystem mutation directly. Cleanup is Quarantine + Journal + Undo;
+there is no permanent deletion, telemetry, upload, cloud/API call, or MCP yet.
+The developer smoke path owns its temporary fixture and never targets
+arbitrary real-machine data.
 
 The scanner recognizes only the documented artifact names, does not follow
 links or reparse points, excludes `.git` from cleanup candidates, and reports
@@ -60,9 +80,9 @@ deterministic partial results. Use `--allow-network` only for an explicit
 opt-in; network scanning is never the default.
 
 DWI analysis and public interfaces are offline-first and read-only. The
-internal human CLI is the sole current cleanup adapter and only delegates
-through the reviewed disposable-root or approved-local-root gate described
-above. The gate binds lexical paths to authoritative Windows
+internal human CLI and Desktop are cleanup presentation adapters and only
+delegate through the reviewed disposable-root or approved-local-root gate
+described above. The gate binds lexical paths to authoritative Windows
 final paths, rejects short-name aliases to protected roots, and claims each
 plan item before writing mutation lifecycle records. DWI performs no telemetry, automatic diagnostic upload, HTTP, cloud, or
 API communication. Network filesystem access
@@ -111,8 +131,7 @@ serialized or accepted from callers, and Undo is addressed only by an
 engine-issued recovery identifier during that process. Windows Recycle Bin
 integration is deferred until deterministic recovery metadata, auditable state,
 and restart-safe Undo semantics are demonstrated. There is no public release,
-Desktop or MCP cleanup interface, arbitrary raw-path mutation API, or permanent
-deletion.
+MCP cleanup interface, arbitrary raw-path mutation API, or permanent deletion.
 
 Future cleanup operations must consume immutable engine-generated plans and
 validated plan-item identifiers. No interface may expose arbitrary raw-path

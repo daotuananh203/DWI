@@ -30,7 +30,12 @@ def main(argv: list[str] | None = None) -> int:
     system.add_argument("--max-nodes", type=int, dest="max_nodes")
     system.add_argument("--max-files", type=int, dest="max_files")
     system.add_argument("--json", action="store_true", dest="as_json")
+    commands.add_parser("desktop", help="launch the Windows Desktop application")
     args = parser.parse_args(argv)
+    if args.command == "desktop":
+        from .desktop import run_desktop
+
+        return run_desktop()
     if args.command == "scan-system":
         try:
             has_explicit_roots = bool(args.roots)
