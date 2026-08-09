@@ -38,6 +38,7 @@ from dwi import (
     ScanTermination,
     SizeObservation,
     SystemScan,
+    QuarantineState,
     evaluate_safety,
     scan_context_from_system_scan,
 )
@@ -60,6 +61,7 @@ from dwi.mutation import (
     create_audit_journal,
     create_disposable_root,
     create_quarantine_root,
+    reconcile_pending_operations,
     restore_recovery,
 )
 from dwi.policy import SafetyContext
@@ -315,6 +317,69 @@ class CleanupApplicationTests(unittest.TestCase):
                 self.assertEqual(result.state, CleanupSessionState.BLOCKED)
                 self.assertTrue(Path(plan.items[0].snapshot.path).exists())
 
+    def test_orphan_claim_reconciles_metadata_then_stops_before_new_execution(self) -> None:
+        plan = self._plan()
+        session, confirmation = self._session_and_confirmation(plan)
+        item = plan.items[0]
+        from dwi.cleanup import authorize_execution, validate_cleanup_plan
+        validation = validate_cleanup_plan(
+            plan,
+            {item.plan_item_id: item.snapshot},
+            scan_context=self._context(),
+        )
+        authorization = authorize_execution(plan, validation)
+        destination = self.quarantine_root.path + "\\" + f"recovery-{_digest((plan.plan_id, item.plan_item_id))[:32]}"
+        claimed, reason = _claim_authorization_item(
+            self.journal,
+            plan,
+            item,
+            authorization,
+            validation_identity=validation.validation_token,
+            quarantine_path=destination,
+            timestamp=self.clock(),
+        )
+        self.assertTrue(claimed, reason)
+        self.assertEqual(self.journal.read_entries(), ())
+        claim_files_before = tuple(sorted(
+            path.name for path in Path(self.disposable.path).iterdir()
+            if path.name.startswith(".dwi-claim-")
+        ))
+        quarantine_entries_before = tuple(Path(self.quarantine_root.path).iterdir())
+        fresh_calls: list[object] = []
+
+        def revalidate(current_plan):
+            fresh_calls.append(current_plan)
+            return _trusted_snapshot_set(
+                current_plan,
+                {current_item.plan_item_id: current_item.snapshot for current_item in current_plan.items},
+                self._context(),
+                engine_version="synthetic-engine-v0.3",
+                created_at=self.clock(),
+            )
+
+        with patch("dwi.application.authorize_execution", side_effect=AssertionError("new authorization was issued")):
+            result = self._execute(session, confirmation, engine_revalidator=_engine_revalidator(revalidate))
+        self.assertEqual(result.state, CleanupSessionState.RECONCILIATION_REQUIRED)
+        self.assertEqual(fresh_calls, [])
+        self.assertIsNotNone(result.reconciliation)
+        self.assertTrue(result.reconciliation.metadata_appended)
+        self.assertEqual(
+            [entry.status for entry in self.journal.read_entries()],
+            [QuarantineState.AUTHORIZATION_CLAIMED, QuarantineState.FAILED],
+        )
+        self.assertEqual(tuple(sorted(
+            path.name for path in Path(self.disposable.path).iterdir()
+            if path.name.startswith(".dwi-claim-")
+        )), claim_files_before)
+        self.assertEqual(tuple(Path(self.quarantine_root.path).iterdir()), quarantine_entries_before)
+        self.assertTrue(Path(item.snapshot.path).exists())
+
+        journal_after = Path(self.journal.path).read_bytes() if Path(self.journal.path).exists() else b""
+        repeated = reconcile_pending_operations(self.journal, self.disposable, self.quarantine_root, clock=self.clock)
+        self.assertEqual(repeated.claim_recoveries, ())
+        self.assertFalse(repeated.metadata_appended)
+        self.assertEqual(Path(self.journal.path).read_bytes(), journal_after)
+
     def test_successful_execution_reports_per_item_and_undo_remains_available(self) -> None:
         plan = self._plan()
         session, confirmation = self._session_and_confirmation(plan)
@@ -355,9 +420,9 @@ class CleanupApplicationTests(unittest.TestCase):
         Path(collision).mkdir()
         session, confirmation = self._session_and_confirmation(plan)
         result = self._execute(session, confirmation)
-        self.assertEqual(result.state, CleanupSessionState.PARTIAL)
+        self.assertEqual(result.state, CleanupSessionState.RECONCILIATION_REQUIRED)
         self.assertFalse(result.transactional)
-        self.assertEqual({item.outcome for item in result.item_results}, {CleanupItemOutcome.SUCCEEDED, CleanupItemOutcome.FAILED})
+        self.assertEqual({item.outcome for item in result.item_results}, {CleanupItemOutcome.BLOCKED})
 
     def test_unexpected_multi_item_failure_preserves_completed_item_and_undo(self) -> None:
         plan = self._plan((self.workspace / "first-cache", self.workspace / "second-cache"))
@@ -394,8 +459,8 @@ class CleanupApplicationTests(unittest.TestCase):
         Path(collision).mkdir()
         session, confirmation = self._session_and_confirmation(plan)
         result = self._execute(session, confirmation)
-        self.assertEqual(result.state, CleanupSessionState.BLOCKED)
-        self.assertEqual(result.item_results[0].outcome, CleanupItemOutcome.FAILED)
+        self.assertEqual(result.state, CleanupSessionState.RECONCILIATION_REQUIRED)
+        self.assertEqual(result.item_results[0].outcome, CleanupItemOutcome.BLOCKED)
 
         plan = self._plan((self.workspace / "orphan-cache",))
         session, confirmation = self._session_and_confirmation(plan)

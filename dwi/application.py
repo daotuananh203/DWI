@@ -14,6 +14,7 @@ from typing import Callable, Mapping
 
 from .cleanup import (
     CleanupPlan,
+    ExecutionAuthorization,
     ExecutionAuthorizationStatus,
     FindingSnapshot,
     PlanId,
@@ -32,6 +33,7 @@ from .mutation import (
     QuarantineRoot,
     QuarantineResult,
     ReconciliationResult,
+    inspect_quarantine_inventory,
     reconcile_pending_operations,
     quarantine_plan,
 )
@@ -56,6 +58,31 @@ class CleanupItemOutcome(str, Enum):
     FAILED = "failed"
     BLOCKED = "blocked"
     REPLAYED = "replayed"
+
+
+@dataclass(frozen=True)
+class CleanupMutationContext:
+    """Engine-provided mutation capabilities for one application attempt.
+
+    The quarantine root may be absent in the pre-authorization recovery
+    context. That phase may inspect existing DWI state and append narrowly
+    scoped reconciliation metadata for pre-existing claims or crash windows,
+    but it cannot create a root, claim, payload, or new cleanup lifecycle.
+    The root must be present in the post-authorization context consumed by the
+    mutation primitive.
+    """
+
+    mutation_root: MutationRoot
+    quarantine_root: QuarantineRoot | None
+    journal: AuditJournal
+
+
+@dataclass(frozen=True)
+class CleanupMutationProvider:
+    """Internal two-phase provider for recovery and authorized mutation context."""
+
+    recovery_context: Callable[[CleanupPlan], CleanupMutationContext]
+    authorized_context: Callable[[CleanupPlan, PlanValidation, ExecutionAuthorization], CleanupMutationContext]
 
 
 @dataclass(frozen=True)
@@ -473,9 +500,10 @@ def execute_cleanup_session(
     confirmation: HumanConfirmation,
     *,
     engine_revalidator: EngineRevalidator,
-    mutation_root: MutationRoot,
-    quarantine_root: QuarantineRoot,
-    journal: AuditJournal,
+    mutation_root: MutationRoot | None = None,
+    quarantine_root: QuarantineRoot | None = None,
+    journal: AuditJournal | None = None,
+    mutation_provider: CleanupMutationProvider | None = None,
     clock=None,
 ) -> CleanupApplicationResult:
     """Revalidate and execute one confirmed plan without accepting raw paths."""
@@ -486,25 +514,92 @@ def execute_cleanup_session(
         return _blocked_result(session, reason="missing, forged, stale, or mismatched human confirmation")
     if not isinstance(engine_revalidator, EngineRevalidator):
         return _blocked_result(session, reason="fresh engine revalidation capability is required")
-    try:
-        reconciliation = reconcile_pending_operations(
-            journal,
-            mutation_root,
-            quarantine_root,
-            **({"clock": clock} if clock is not None else {}),
-        )
-    except Exception as error:
-        return _blocked_result(
-            session,
-            state=CleanupSessionState.RECONCILIATION_REQUIRED,
-            reason=f"restart reconciliation failed closed: {error}",
-        )
+    if mutation_provider is not None:
+        if not isinstance(mutation_provider, CleanupMutationProvider):
+            return _blocked_result(session, reason="mutation context provider is not engine-owned")
+        try:
+            mutation_context = mutation_provider.recovery_context(session.plan)
+            if not isinstance(mutation_context, CleanupMutationContext):
+                raise TypeError("recovery context is not engine-owned")
+        except Exception as error:
+            return _blocked_result(
+                session,
+                state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                reason=f"mutation recovery context could not be prepared: {error}",
+            )
+    else:
+        if mutation_root is None or quarantine_root is None or journal is None:
+            return _blocked_result(session, reason="mutation context is required")
+        mutation_context = CleanupMutationContext(mutation_root, quarantine_root, journal)
+    mutation_root = mutation_context.mutation_root
+    quarantine_root = mutation_context.quarantine_root
+    journal = mutation_context.journal
+    if mutation_provider is not None and quarantine_root is None:
+        # A first-run workspace has no quarantine directory yet. Inspect the
+        # existing journal/claim state without creating anything; only an
+        # already-existing, empty state may proceed to fresh validation.
+        try:
+            existing_entries = journal.read_entries()
+            existing_claims = journal.read_claims()
+        except Exception as error:
+            return _blocked_result(
+                session,
+                state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                reason=f"existing mutation state could not be inspected safely: {error}",
+            )
+        if existing_entries or existing_claims:
+            reconciliation = ReconciliationResult(
+                existing_entries,
+                ("existing recovery state requires a quarantine root for reconciliation",),
+                (),
+            )
+            return _blocked_result(
+                session,
+                state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                reconciliation=reconciliation,
+                reason="existing recovery state requires review before execution",
+            )
+        reconciliation = ReconciliationResult((), (), ())
+    else:
+        if quarantine_root is None:
+            return _blocked_result(session, reason="quarantine mutation context is incomplete")
+        try:
+            # Inventory inspection is read-only. Reconciliation immediately
+            # below may append metadata for pre-existing DWI recovery state,
+            # but it cannot create new cleanup state or mutate a candidate.
+            inventory = inspect_quarantine_inventory(journal, mutation_root, quarantine_root)
+            if inventory.failures:
+                return _blocked_result(
+                    session,
+                    state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                    reconciliation=inventory,
+                    reason="quarantine inventory requires reconciliation before execution",
+                )
+            reconciliation = reconcile_pending_operations(
+                journal,
+                mutation_root,
+                quarantine_root,
+                **({"clock": clock} if clock is not None else {}),
+            )
+        except Exception as error:
+            return _blocked_result(
+                session,
+                state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                reason=f"restart reconciliation failed closed: {error}",
+            )
     if reconciliation.failures:
         return _blocked_result(
             session,
             state=CleanupSessionState.RECONCILIATION_REQUIRED,
             reconciliation=reconciliation,
             reason="pending mutation reconciliation requires review before execution",
+        )
+    if reconciliation.metadata_appended:
+        return _blocked_result(
+            session,
+            state=CleanupSessionState.RECONCILIATION_REQUIRED,
+            reconciliation=reconciliation,
+            reason="pre-existing recovery state was reconciled; a new invocation is required before execution",
         )
     if any(recovery.plan_id == session.plan.plan_id.value for recovery in reconciliation.claim_recoveries):
         return _blocked_result(
@@ -542,6 +637,42 @@ def execute_cleanup_session(
             reconciliation=reconciliation,
             reason="engine authorization was denied",
         )
+    if mutation_provider is not None:
+        try:
+            mutation_context = mutation_provider.authorized_context(
+                session.plan,
+                validation,
+                authorization,
+            )
+            if not isinstance(mutation_context, CleanupMutationContext):
+                raise TypeError("authorized mutation context is not engine-owned")
+        except Exception as error:
+            return _blocked_result(
+                session,
+                validation_status=validation.status,
+                authorization_status=authorization.status,
+                reconciliation=reconciliation,
+                reason=f"authorized mutation context could not be prepared: {error}",
+            )
+        mutation_root = mutation_context.mutation_root
+        quarantine_root = mutation_context.quarantine_root
+        journal = mutation_context.journal
+        if quarantine_root is None:
+            return _blocked_result(
+                session,
+                validation_status=validation.status,
+                authorization_status=authorization.status,
+                reconciliation=reconciliation,
+                reason="authorized mutation context did not provide a quarantine root",
+            )
+    if mutation_root is None or quarantine_root is None or journal is None:
+        return _blocked_result(
+            session,
+            validation_status=validation.status,
+            authorization_status=authorization.status,
+            reconciliation=reconciliation,
+            reason="authorized mutation context is incomplete",
+        )
     try:
         quarantine = quarantine_plan(
             session.plan,
@@ -551,6 +682,43 @@ def execute_cleanup_session(
             quarantine_root,
             journal,
             **({"clock": clock} if clock is not None else {}),
+        )
+    except KeyboardInterrupt:
+        try:
+            recovered = reconcile_pending_operations(
+                journal,
+                mutation_root,
+                quarantine_root,
+                **({"clock": clock} if clock is not None else {}),
+            )
+        except Exception as recovery_error:
+            return _blocked_result(
+                session,
+                state=CleanupSessionState.RECONCILIATION_REQUIRED,
+                validation_status=validation.status,
+                authorization_status=authorization.status,
+                reconciliation=reconciliation,
+                reason=f"cleanup interrupted and recovery was inconclusive: {recovery_error}",
+            )
+        item_results = _item_results_from_reconciliation(
+            session.plan,
+            recovered,
+            "cleanup interrupted after authorization; journal/recovery state was preserved",
+        )
+        state, reason = _application_state_for_items(
+            item_results,
+            default=CleanupSessionState.RECONCILIATION_REQUIRED if recovered.failures else CleanupSessionState.BLOCKED,
+            reason="cleanup interrupted after authorization; journal/recovery state was preserved",
+        )
+        return CleanupApplicationResult(
+            session.session_id,
+            session.plan.plan_id,
+            state,
+            validation.status,
+            authorization.status,
+            item_results,
+            recovered,
+            reason,
         )
     except Exception as error:
         try:

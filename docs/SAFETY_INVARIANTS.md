@@ -147,6 +147,21 @@ constructed set cannot qualify. Confirmation does not create policy,
 validation, or authorization. Changed, stale, partial, failed, or conflicting
 evidence after confirmation blocks execution.
 
+39. The internal human CLI is presentation/orchestration only. It cannot
+construct or accept trusted scan state, `RiskLabel`, `ActionEligibility`,
+successful validation, authorization, or raw-path mutation requests. It must
+use the exact typed confirmation and application-service chain, must not expose
+`--force`/`--yes` bypasses, and must not serialize engine capabilities across
+processes. Its reversible action remains quarantine plus journal and Undo.
+
+40. Before a new cleanup authorization, pre-authorization recovery
+reconciliation may append metadata describing pre-existing DWI recovery state.
+It cannot begin or mutate a new cleanup operation: no candidate move/rename,
+quarantine-payload move, quarantine-root creation, execution-claim creation,
+or new cleanup lifecycle is permitted. If reconciliation is required, the
+application returns `RECONCILIATION_REQUIRED` and does not request fresh plan
+validation or new execution authorization in that invocation.
+
 ## Future executor invariants
 
 The following invariants apply when cleanup planning and execution enter the
@@ -199,12 +214,14 @@ The following questions must not be collapsed into one field:
 
 ## Review standard
 
-The current v0.3 layer includes a separate internal mutation primitive. It
+The current v0.3 layer includes a separate internal mutation primitive and an
+internal human CLI adapter. It
 supports explicitly marked disposable directories for tests and an
 engine-issued approved-local-root gate for future real-Windows validation. It
 performs only authorized, reversible same-volume quarantine/restore moves and
-append-only journal writes; it has no public user-workspace cleanup interface,
-no permanent deletion, and no copy/delete fallback. Any public cleanup
+append-only journal writes; the CLI is single-process and pre-public, with no
+capability persistence, permanent deletion, or copy/delete fallback. Desktop
+and MCP cleanup interfaces remain absent. Any public cleanup
 executor still requires a separate approved design covering confirmation,
 recovery, journaling, race conditions, and failure handling.
 

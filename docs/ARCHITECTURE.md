@@ -11,8 +11,9 @@ interfaces over the same core. They must never create an alternate safety path.
 ## Shared product pipeline
 
 The diagram includes future public cleanup stages. v0.3 also implements an
-internal presentation-neutral application service, but no public cleanup
-interface or user-workspace cleanup stage is exposed.
+internal presentation-neutral application service and a human-facing CLI
+adapter. The CLI is a single-process, pre-public presentation/orchestration
+boundary; Desktop and MCP cleanup interfaces remain unimplemented.
 
 ```text
 Filesystem observations
@@ -72,13 +73,13 @@ It is not a recursive scanner, registry, plugin mechanism, or dynamic discovery
 system; an unknown basename returns no analysis result.
 - **Safety Policy:** applies ordered gates and produces the risk label, action eligibility, and rule trace.
 - **Reclaim ranking:** estimates reclaim priority independently from safety.
-- **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions.
+- **CLI/reporting:** presents deterministic findings in human-readable and JSON forms without changing conclusions. Its internal `cleanup` command displays the engine-generated plan, requires the exact typed confirmation, delegates fresh validation/authorization/quarantine/journal/Undo to the application service, and exposes no raw target or trusted capability. Capabilities are not persisted across processes.
 - **Cleanup planning:** pure v0.3 logic creates immutable engine-generated plans from eligible Findings, complete trusted scan context, canonical approved-root bindings, and valid filesystem identity snapshots. Mutation-capable snapshots retain both lexical and authoritative final paths; raw paths are not accepted as plan inputs.
 - **Plan validation:** pure v0.3 logic requires a new trusted scan context and compares current snapshots immediately before execution, returning valid, stale, blocked, or inconclusive states; it can only preserve or increase conservatism.
 - **Execution authorization:** pure v0.3 logic issues metadata-only authorization from an internal engine proof bound to the exact plan and validation state; it is not implied by `SAFE`, `ELIGIBLE_FOR_EXPLICIT_ACTION`, copied tokens, or public validation fields.
 - **Mutation Safety Gate:** accepts only the exact authorized plan, its valid immediate validation, a private unconsumed plan-item authorization, and the plan's engine-approved local root. It resolves lexical paths through an authoritative Windows final-path handle API after ordinary ancestry checks, rejects filesystem roots, network/UNC/mapped/unknown volumes, system/protected roots, linked/reparse paths, and root escapes, and compares both path identities at execution time.
 - **Isolated mutation primitive:** accepts only the exact authorized plan and engine-issued disposable or approved-local-root/quarantine/journal capabilities; it atomically claims each plan item before writing lifecycle records, rechecks identity/type/reparse/root/evidence/policy state immediately, and uses only same-filesystem non-overwriting Windows rename.
-- **Cleanup application service:** accepts one engine-generated cleanup session, exact typed human confirmation, and an internal engine revalidator capability. The revalidator must supply a `TrustedSnapshotSet` for the exact plan, bound to fresh evaluation identity, rule-engine version, scan provenance, snapshot digest, and creation time; caller mappings or hand-built snapshots are rejected. After confirmation, the service performs fresh evidence/interpretation/policy validation, obtains one-shot engine authorization, delegates to the internal mutation primitive, and reports each item independently. It accepts no raw path and is not exported through CLI, Desktop, or MCP.
+- **Cleanup application service:** accepts one engine-generated cleanup session, exact typed human confirmation, and an internal engine revalidator capability. The revalidator must supply a `TrustedSnapshotSet` for the exact plan, bound to fresh evaluation identity, rule-engine version, scan provenance, snapshot digest, and creation time; caller mappings or hand-built snapshots are rejected. After confirmation, the service performs fresh evidence/interpretation/policy validation, obtains one-shot engine authorization, delegates to the internal mutation primitive, and reports each item independently. It accepts no raw path. The internal CLI is its presentation adapter; Desktop and MCP are not implemented.
 - **Cleanup execution:** future public executor accepts only authorized engine plans, prefers Trash/Quarantine, and records an audit journal for Undo/recovery.
 
 The scanner adapts each dispatcher result through a single-candidate selection
@@ -113,7 +114,10 @@ Reachability is an ordered hard gate. If a reference or active consumer is confi
 
 Artifact names are candidate-identification hints only. They never map directly to labels, and runtime uncertainty defaults to `REVIEW_REQUIRED`.
 
-The domain core must not know whether a result came from the CLI, a future desktop UI, or a future MCP adapter. Future adapters are documented possibilities only and are not MVP components.
+The domain core must not know whether a result came from the internal CLI, a
+future desktop UI, or a future MCP adapter. The CLI is a presentation adapter;
+Desktop and MCP are documented future possibilities and are not current
+components.
 
 ## Future architecture, explicitly out of MVP
 
@@ -127,15 +131,26 @@ Evaluation inputs must be explicit and serializable enough for tests and reports
 
 The MVP targets Windows filesystem behavior. Junctions, reparse points, symlinks, permissions, and `.git` files must be treated as first-class uncertainty sources. Cross-platform behavior is deferred until the Windows semantics are specified and tested.
 
-The current CLI is reporting-only. `scan-system` is read-only, offline-first,
-and network-deny-by-default; it performs no telemetry, HTTP, cloud, or API
-communication. `--allow-network` permits only explicitly requested bounded
-network-filesystem I/O after the same safety gate. It has no public
-user-workspace cleanup interface, process-wide activity scan, cross-project
-reachability, or project-wide package-manager analysis. The internal v0.3
-application service delegates only reversible quarantine/restore moves after
-its hard disposable-test-root or approved-local-root gate; no public executor,
-permanent deletion, or Windows Recycle Bin integration is implemented.
+The current CLI provides read-only `scan`/`scan-system` reporting plus a
+pre-public, single-process human-confirmed `cleanup` adapter. `scan-system` is
+read-only, offline-first, and network-deny-by-default; it performs no
+telemetry, HTTP, cloud, or API communication. The cleanup adapter does not
+accept `delete`, `remove`, or `quarantine` raw-path commands, `--force`, or
+`--yes`, and it does not persist capabilities. There is no Desktop/MCP cleanup
+path, process-wide activity scan, cross-project reachability, or project-wide
+package-manager analysis. The internal v0.3 application service delegates
+only reversible quarantine/restore moves after its hard disposable-test-root
+or approved-local-root gate; no public executor, permanent deletion, or
+Windows Recycle Bin integration is implemented.
+
+Before requesting a new `PlanValidation` or `ExecutionAuthorization`, the
+service first inspects existing recovery state. Inventory inspection is
+read-only. A narrowly scoped restart reconciliation may append only
+hash-chained journal metadata for pre-existing orphan claims or crash-window
+records; it never creates a quarantine root or claim, creates a new cleanup
+lifecycle/payload, moves candidate data, or moves quarantine payloads. A
+reconciliation result stops that invocation with `RECONCILIATION_REQUIRED`.
+This metadata reconciliation is recovery handling, not candidate mutation.
 
 Python filesystem APIs cannot make a multi-operation path traversal perfectly
 atomic against concurrent replacement. The scanner and size collector
@@ -171,6 +186,11 @@ restart reconciliation validates the claim payload, journals it as
 `AUTHORIZATION_CLAIMED` followed by `FAILED` without moving data, and retains
 the claim file as a replay lock. Malformed or unjournalable claims remain
 blocked with an auditable reconciliation-required state.
+
+Pre-authorization reconciliation is intentionally limited to append-only
+journal metadata for state that already existed before the new cleanup
+attempt. It is deterministic and idempotent: repeated reconciliation does not
+create duplicate lifecycle records, new claims, quarantine roots, or payloads.
 
 MCP cleanup operations must accept only engine-generated `plan_id` and
 plan-item identifiers. An operation such as `delete_file(path)` is prohibited.

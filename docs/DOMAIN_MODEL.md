@@ -123,6 +123,32 @@ not a cryptographic process-isolation boundary; its constructors and factories
 remain internal and are not exposed through the top-level package or future
 presentation adapters.
 
+Before a new cleanup authorization, recovery handling has two distinct
+classes. Inventory inspection is read-only. If pre-existing DWI quarantine,
+journal, or claim state is valid but incomplete, restart reconciliation may
+append only hash-chained metadata describing that existing claim or crash
+window. It cannot create a quarantine root, create a new execution claim,
+create a new cleanup payload or lifecycle, move/rename candidate data, or move
+quarantine payloads. After reconciliation, the service returns
+`RECONCILIATION_REQUIRED` for the affected recovery state and does not request
+fresh plan validation or new execution authorization in that invocation. A
+later explicit invocation may continue only after the existing recovery state
+is consistent.
+
+### Human CLI adapter
+
+The internal `dwi cleanup PATH` command is a presentation/orchestration adapter
+for one process. It displays the engine-generated `CleanupPlan`, requires the
+exact `HumanConfirmation`, then delegates fresh revalidation, authorization,
+quarantine, journaling, and Undo to the application service. It does not
+construct or accept `RiskLabel`, `ActionEligibility`, trusted scan context,
+`TrustedSnapshotSet`, successful `PlanValidation`, or
+`ExecutionAuthorization`, and it does not accept a raw path as an execution
+target. JSON output contains stable findings and outcomes, never capabilities
+or proof material. Capabilities are not serialized for a later process; Undo
+uses only an engine-issued recovery identifier while the runtime context is
+available.
+
 ### CleanupExecutor, Trash/Quarantine, and Journal/Undo
 
 The executor performs only an authorized plan. Initial cleanup releases must

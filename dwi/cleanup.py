@@ -493,6 +493,29 @@ def scan_context_from_system_scan(scan: object) -> TrustedScanContext:
     return _trusted_scan_context(completeness, provenance, observed_roots)
 
 
+def scan_context_from_workspace_scan(scan: object) -> TrustedScanContext:
+    """Create engine-issued planning context from one bounded workspace scan."""
+
+    from .scanner import WorkspaceScan
+
+    if not isinstance(scan, WorkspaceScan):
+        raise TypeError("trusted workspace context requires an engine WorkspaceScan result")
+    completeness = (
+        ScanCompleteness.COMPLETE
+        if scan.termination.value == "completed" and not scan.observation_failures and not scan.ambiguous_paths
+        else ScanCompleteness.PARTIAL
+    )
+    provenance = _digest((
+        scan.root,
+        scan.termination,
+        scan.observation_failures,
+        scan.ambiguous_paths,
+        scan.nodes_observed,
+        scan.files_observed,
+    ))
+    return _trusted_scan_context(completeness, provenance, (scan.root,))
+
+
 def snapshot_from_finding(
     finding: Finding,
     filesystem_identity: FilesystemIdentity,

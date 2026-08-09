@@ -78,11 +78,17 @@ These cases define the failure-oriented design and future test fixtures. They ar
   journaled after a crash.
 - A human confirmation is missing, forged, stale, bound to another plan, or
   based on a modified review snapshot.
+- The human CLI receives an unsafe `--force`/`--yes` flag or a raw `delete`,
+  `remove`, or `quarantine` command; these must be rejected before the service.
+- CLI JSON output leaks an authorization capability, proof token, or another
+  value that could be replayed by a later process.
 - Filesystem identity, policy posture, scan completeness, or evidence changes
   after confirmation and before fresh validation.
 - An orphan authorization claim is discovered after restart; it must be
   journaled as claimed-then-failed or remain reconciliation-required without
-  mutation or automatic retry.
+  candidate/payload mutation or automatic retry. The allowed journal append is
+  metadata reconciliation for the pre-existing recovery state, not a new
+  cleanup lifecycle.
 - A quarantine rename commits but its final `QUARANTINED` journal append fails.
 - A restore rename commits but its final `RESTORED` journal append fails.
 - A journal record is edited, deleted, reordered, duplicated, truncated, or
@@ -103,6 +109,9 @@ handles a claimed-but-not-started state.
 
 The internal application service adds an exact review/confirmation gate and
 reports multi-item outcomes independently; it never implies transactionality.
+The human CLI is a single-process presentation/orchestration adapter. It uses
+an engine-issued recovery identifier for immediate Undo and does not persist or
+reconstruct trusted capabilities across processes.
 
 ## Required behavior
 

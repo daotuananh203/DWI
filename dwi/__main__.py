@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .cleanup_cli import run_cleanup
 from .report import json_report, json_system_report, table_report, table_system_report
 from .scanner import WorkspaceScanError, scan_workspace
 from .scan_control import ScanLimits
@@ -17,6 +18,10 @@ def main(argv: list[str] | None = None) -> int:
     scan = commands.add_parser("scan", help="scan one explicit workspace root")
     scan.add_argument("path")
     scan.add_argument("--json", action="store_true", dest="as_json")
+    cleanup = commands.add_parser("cleanup", help="review and optionally quarantine one workspace in this process")
+    cleanup.add_argument("path")
+    cleanup.add_argument("--json", action="store_true", dest="as_json")
+    cleanup.add_argument("--confirm-phrase", dest="confirmation_phrase")
     system = commands.add_parser("scan-system", help="scan approved local developer-storage roots")
     system.add_argument("--root", action="append", dest="roots", default=[])
     system.add_argument("--drive")
@@ -50,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(json_system_report(result) if args.as_json else table_system_report(result), end="")
         return 0
+    if args.command == "cleanup":
+        return run_cleanup(
+            args.path,
+            as_json=args.as_json,
+            confirmation_phrase=args.confirmation_phrase,
+        )
     try:
         result = scan_workspace(args.path)
     except WorkspaceScanError as error:

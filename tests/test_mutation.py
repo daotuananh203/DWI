@@ -67,6 +67,7 @@ from dwi.mutation import (
     create_audit_journal,
     create_disposable_root,
     create_quarantine_root,
+    inspect_quarantine_inventory,
     _claim_authorization_item,
     quarantine_plan,
     reconcile_pending_operations,
@@ -214,6 +215,82 @@ class MutationPrimitiveTests(unittest.TestCase):
         self.assertTrue(Path(result.records[0].metadata.original_path).exists())
         self.assertFalse(destination.exists())
 
+    def test_empty_quarantine_inventory_is_valid_and_read_only(self) -> None:
+        before = tuple(sorted(path.name for path in Path(self.quarantine_root.path).iterdir()))
+        journal_before = Path(self.journal.path).read_bytes() if Path(self.journal.path).exists() else None
+        result = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+        self.assertEqual(result.failures, ())
+        self.assertEqual(tuple(sorted(path.name for path in Path(self.quarantine_root.path).iterdir())), before)
+        self.assertEqual(
+            Path(self.journal.path).read_bytes() if Path(self.journal.path).exists() else None,
+            journal_before,
+        )
+
+    def test_valid_journaled_quarantine_inventory_is_accepted(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        result = quarantine_plan(
+            plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock,
+        )
+        self.assertEqual(result.failures, ())
+        inspected = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+        self.assertEqual(inspected.failures, ())
+
+    def test_unknown_quarantine_entries_fail_closed_without_repair(self) -> None:
+        cases = ("unjournaled.bin", "manual-copy", "malformed-recovery-object")
+        for name in cases:
+            with self.subTest(name=name):
+                path = Path(self.quarantine_root.path, name)
+                if name == "unjournaled.bin":
+                    path.write_bytes(b"unaccounted")
+                else:
+                    path.mkdir()
+                    if name == "manual-copy":
+                        (path / "nested-artifact").write_bytes(b"unaccounted")
+                before = tuple(sorted(item.name for item in Path(self.quarantine_root.path).iterdir()))
+                result = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+                self.assertTrue(result.failures)
+                self.assertTrue(any("unexpected quarantine entry" in failure for failure in result.failures))
+                self.assertEqual(tuple(sorted(item.name for item in Path(self.quarantine_root.path).iterdir())), before)
+                if path.is_dir():
+                    if (path / "nested-artifact").exists():
+                        (path / "nested-artifact").unlink()
+                    path.rmdir()
+                else:
+                    path.unlink()
+
+    def test_expected_quarantine_payload_missing_or_identity_changed_fails_closed(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        result = quarantine_plan(
+            plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock,
+        )
+        destination = Path(result.records[0].metadata.quarantine_path)
+        destination.rmdir()
+        missing = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+        self.assertTrue(any("expected quarantine payload is missing" in failure for failure in missing.failures))
+
+        destination.mkdir()
+        changed = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+        self.assertTrue(any("filesystem identity/type changed" in failure for failure in changed.failures))
+
+    def test_symlinked_expected_quarantine_payload_fails_closed(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        result = quarantine_plan(
+            plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock,
+        )
+        destination = Path(result.records[0].metadata.quarantine_path)
+        destination.rmdir()
+        target = self.workspace / "symlink-target"
+        target.mkdir()
+        try:
+            os.symlink(str(target), str(destination), target_is_directory=True)
+        except (OSError, NotImplementedError) as error:
+            self.skipTest(f"symlink fixture unavailable: {error}")
+        inspected = inspect_quarantine_inventory(self.journal, self.disposable, self.quarantine_root)
+        self.assertTrue(any("linked or reparse-backed" in failure for failure in inspected.failures))
+
     def test_authorization_item_is_one_shot_and_replay_is_rejected(self) -> None:
         plan = self._plan()
         validation, authorization = self._authorization(plan)
@@ -297,6 +374,7 @@ class MutationPrimitiveTests(unittest.TestCase):
             [entry.status for entry in self.journal.read_entries()],
             [QuarantineState.AUTHORIZATION_CLAIMED, QuarantineState.FAILED],
         )
+        self.assertTrue(reconciled.metadata_appended)
         self.assertTrue(Path(item.snapshot.path).exists())
         repeated = reconcile_pending_operations(
             self.journal,
@@ -305,6 +383,7 @@ class MutationPrimitiveTests(unittest.TestCase):
             clock=self.clock,
         )
         self.assertEqual(repeated.claim_recoveries, ())
+        self.assertFalse(repeated.metadata_appended)
 
     def test_approved_local_root_is_engine_bound(self) -> None:
         plan = self._plan()

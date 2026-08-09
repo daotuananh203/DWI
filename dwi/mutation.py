@@ -370,6 +370,23 @@ def approve_local_mutation_root(
     return ApprovedMutationRoot(canonical, plan.approved_root.path, authority.final_path, _MUTATION_ROOT_CAPABILITY)
 
 
+def prepare_recovery_mutation_root(plan: CleanupPlan) -> ApprovedMutationRoot:
+    """Prepare an approved root for journal reconciliation only.
+
+    This capability is intentionally usable before fresh validation only for
+    bounded recovery-context setup. Mutation still requires the later
+    ``approve_local_mutation_root`` result bound to valid current authorization.
+    """
+
+    if not isinstance(plan, CleanupPlan):
+        raise MutationRefused("recovery mutation root requires an engine-generated plan")
+    canonical = _verify_approved_local_root(plan.approved_root.path)
+    authority = _authoritative_path(canonical)
+    if authority is None:
+        raise MutationRefused("approved root authoritative path could not be established")
+    return ApprovedMutationRoot(canonical, plan.approved_root.path, authority.final_path, _MUTATION_ROOT_CAPABILITY)
+
+
 def _verify_marked_disposable_path(path: str) -> str:
     if os.name != "nt":
         raise MutationRefused("disposable mutation primitives are Windows-only")
@@ -420,13 +437,47 @@ def _verify_mutation_root(root: MutationRoot) -> str:
     return _verify_approved_local_root(root.path)
 
 
-def create_quarantine_root(root: MutationRoot, relative_path: str = ".dwi-quarantine") -> QuarantineRoot:
+def create_quarantine_root(
+    root: MutationRoot,
+    relative_path: str = ".dwi-quarantine",
+    *,
+    create: bool = False,
+) -> QuarantineRoot:
     root_path = _verify_mutation_root(root)
+    path = _quarantine_path(root_path, relative_path)
+    if create and not _lexists(path):
+        try:
+            os.mkdir(path)
+        except OSError as error:
+            raise MutationRefused("quarantine root could not be created safely") from error
+    if not _lexists(path):
+        raise MutationRefused("quarantine root does not exist")
+    return _build_quarantine_root(root_path, path)
+
+
+def inspect_quarantine_root(
+    root: MutationRoot,
+    relative_path: str = ".dwi-quarantine",
+) -> QuarantineRoot | None:
+    """Inspect an existing quarantine root without creating filesystem state."""
+
+    root_path = _verify_mutation_root(root)
+    path = _quarantine_path(root_path, relative_path)
+    if not _lexists(path):
+        return None
+    return _build_quarantine_root(root_path, path)
+
+
+def _quarantine_path(root_path: str, relative_path: str) -> str:
     if not relative_path or os.path.isabs(relative_path) or "/" in relative_path or "\\" in relative_path or relative_path in {".", ".."}:
         raise MutationRefused("quarantine root must be a simple relative child of the approved mutation root")
     path = _canonical_absolute_path(os.path.join(root_path, relative_path))
     if path is None or not _path_is_within(path, root_path):
         raise MutationRefused("quarantine root escaped the approved mutation root")
+    return path
+
+
+def _build_quarantine_root(root_path: str, path: str) -> QuarantineRoot:
     _safe_directory_metadata(path)
     root_metadata = _safe_directory_metadata(root_path)
     quarantine_metadata = _safe_directory_metadata(path)
@@ -808,6 +859,254 @@ class ReconciliationResult:
     entries: tuple[JournalEntry, ...]
     failures: tuple[str, ...]
     claim_recoveries: tuple[ClaimRecovery, ...] = ()
+    metadata_appended: bool = False
+
+
+_QUARANTINE_PAYLOAD_STATES = frozenset({
+    QuarantineState.QUARANTINING,
+    QuarantineState.QUARANTINED,
+    QuarantineState.QUARANTINE_COMMITTED_UNJOURNALED,
+    QuarantineState.RESTORING,
+})
+_QUARANTINE_TRANSITION_STATES = frozenset({
+    QuarantineState.QUARANTINING,
+    QuarantineState.RESTORING,
+})
+
+
+def _recovery_path_reference(
+    path: str | None,
+    recovery_id: str,
+    quarantine_root: QuarantineRoot,
+) -> tuple[str | None, str | None]:
+    """Validate a journaled payload reference without touching its target."""
+
+    if path is None:
+        return None, "journaled recovery payload path is missing"
+    canonical = _canonical_absolute_path(path)
+    root = _canonical_absolute_path(quarantine_root.path)
+    if canonical is None or root is None or not _path_is_within(canonical, root):
+        return None, f"{recovery_id}: recovery payload path escaped the quarantine root"
+    if os.path.dirname(canonical).casefold() != root.casefold():
+        return None, f"{recovery_id}: recovery payload must be a direct quarantine child"
+    if os.path.basename(canonical).casefold() != recovery_id.casefold():
+        return None, f"{recovery_id}: recovery payload name is not bound to its recovery identifier"
+    return canonical, None
+
+
+def _validate_recovery_identity(entry: JournalEntry, recovery_id: str) -> str | None:
+    identity = entry.filesystem_identity
+    try:
+        expected_recovery_id = f"recovery-{_digest((PlanId(entry.plan_id), PlanItemId(entry.plan_item_id)))[:32]}"
+    except ValueError:
+        return f"{recovery_id}: journaled plan/item identity is malformed"
+    if recovery_id != expected_recovery_id:
+        return f"{recovery_id}: recovery identifier is not bound to its plan item"
+    if not identity.is_suitable_for_planning:
+        return f"{recovery_id}: journaled filesystem identity is missing, linked, invalid, or not a directory"
+    if identity.authoritative_path is None:
+        return f"{recovery_id}: journaled filesystem identity lacks an authoritative path"
+    return None
+
+
+def _matching_payload_identity(
+    path: str,
+    expected: FilesystemIdentity,
+    quarantine_root: QuarantineRoot,
+) -> tuple[FilesystemIdentity | None, str | None]:
+    """Observe one expected payload without following links or reparses."""
+
+    try:
+        metadata = os.lstat(path)
+    except OSError as error:
+        return None, f"payload observation failed: {type(error).__name__}"
+    if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+        return None, "quarantine payload is linked or reparse-backed"
+    identity, error = _observe_identity(path)
+    if error is not None or identity is None:
+        return None, error or "quarantine payload identity could not be observed"
+    if not _same_identity(expected, identity):
+        return None, "quarantine payload filesystem identity/type changed"
+    authority = _authoritative_path(path)
+    quarantine_authority = _authoritative_path(quarantine_root.path)
+    if (
+        authority is None
+        or quarantine_authority is None
+        or authority.final_path != identity.authoritative_path
+        or not _path_is_within(authority.final_path, quarantine_authority.final_path)
+    ):
+        return None, "quarantine payload authoritative path is unavailable or escaped its root"
+    return identity, None
+
+
+def inspect_quarantine_inventory(
+    journal: AuditJournal,
+    disposable_root: MutationRoot,
+    quarantine_root: QuarantineRoot,
+) -> ReconciliationResult:
+    """Read-only verification of journal-accounted quarantine contents.
+
+    The returned failures are deliberately suitable for stopping a cleanup
+    session before fresh revalidation and authorization. This function never
+    repairs a journal, creates state, renames entries, or removes unknown data.
+    """
+
+    _require_mutation_roots(disposable_root, quarantine_root)
+    _require_bound_journal(journal, disposable_root)
+    entries = journal.read_entries()
+    claims = journal.read_claims()
+    failures: list[str] = []
+    disposable_path = _canonical_absolute_path(disposable_root.path)
+    disposable_authority = _authoritative_path(disposable_root.path)
+    disposable_boundary = (
+        disposable_authority.final_path
+        if disposable_authority is not None
+        else disposable_path
+    )
+    if disposable_boundary is None:
+        failures.append("disposable root authoritative path could not be established")
+    latest: dict[str, JournalEntry] = {}
+    by_recovery: dict[str, list[JournalEntry]] = {}
+    for entry in entries:
+        by_recovery.setdefault(entry.recovery_id, []).append(entry)
+        latest[entry.recovery_id] = entry
+        identity_error = _validate_recovery_identity(entry, entry.recovery_id)
+        if identity_error is not None:
+            failures.append(identity_error)
+        original_path = _canonical_absolute_path(entry.original_path)
+        if original_path is None or disposable_path is None or not _path_is_within(original_path, disposable_path):
+            failures.append(f"{entry.recovery_id}: original path escaped the disposable root")
+        elif (
+            entry.filesystem_identity.authoritative_path is None
+            or disposable_boundary is None
+            or not _path_is_within(entry.filesystem_identity.authoritative_path, disposable_boundary)
+        ):
+            failures.append(f"{entry.recovery_id}: original filesystem identity escaped the disposable root")
+        if entry.quarantine_path is not None:
+            _, path_error = _recovery_path_reference(entry.quarantine_path, entry.recovery_id, quarantine_root)
+            if path_error is not None:
+                failures.append(path_error)
+
+    expected: dict[str, tuple[str, FilesystemIdentity, JournalEntry]] = {}
+    for recovery_id, recovery_entries in by_recovery.items():
+        first = recovery_entries[0]
+        for entry in recovery_entries[1:]:
+            if (
+                entry.plan_id != first.plan_id
+                or entry.plan_item_id != first.plan_item_id
+                or entry.original_path != first.original_path
+                or entry.quarantine_path != first.quarantine_path
+                or entry.filesystem_identity != first.filesystem_identity
+            ):
+                failures.append(f"{recovery_id}: journal lifecycle identity or path binding conflicts")
+        current = latest[recovery_id]
+        current_path, path_error = (
+            _recovery_path_reference(current.quarantine_path, recovery_id, quarantine_root)
+            if current.quarantine_path is not None
+            else (None, None)
+        )
+        if path_error is not None:
+            failures.append(path_error)
+        if current.status in _QUARANTINE_PAYLOAD_STATES:
+            if current_path is None:
+                failures.append(f"{recovery_id}: active quarantine lifecycle has no expected payload")
+            else:
+                name_key = os.path.basename(current_path).casefold()
+                prior = expected.get(name_key)
+                if prior is not None and prior[0].casefold() != current_path.casefold():
+                    failures.append(f"{recovery_id}: quarantine payload path collides with another recovery")
+                else:
+                    expected[name_key] = (current_path, current.filesystem_identity, current)
+        elif current.status in _QUARANTINE_TRANSITION_STATES:
+            if current_path is None:
+                failures.append(f"{recovery_id}: transition lifecycle has no payload reference")
+        elif current.status in {
+            QuarantineState.AUTHORIZATION_CLAIMED,
+            QuarantineState.PLANNED,
+            QuarantineState.FAILED,
+            QuarantineState.RESTORED,
+            QuarantineState.RESTORE_COMMITTED_UNJOURNALED,
+        }:
+            # These terminal/pre-mutation states do not claim a payload in the
+            # quarantine directory. Their references were still validated
+            # above so a stale or malformed path cannot be hidden.
+            pass
+        else:
+            failures.append(f"{recovery_id}: unsupported recovery lifecycle state")
+
+    for claim in claims:
+        claim_path, path_error = _recovery_path_reference(claim.quarantine_path, claim.recovery_id, quarantine_root)
+        if path_error is not None:
+            failures.append(path_error)
+        try:
+            expected_claim_recovery_id = f"recovery-{_digest((PlanId(claim.plan_id), PlanItemId(claim.plan_item_id)))[:32]}"
+        except ValueError:
+            expected_claim_recovery_id = ""
+        if claim.recovery_id != expected_claim_recovery_id:
+            failures.append(f"{claim.recovery_id}: authorization claim recovery identifier is not bound to its plan item")
+        if not claim.filesystem_identity.is_suitable_for_planning:
+            failures.append(f"{claim.recovery_id}: authorization claim identity is invalid or linked")
+        original_path = _canonical_absolute_path(claim.original_path)
+        if original_path is None or disposable_path is None or not _path_is_within(original_path, disposable_path):
+            failures.append(f"{claim.recovery_id}: authorization claim original path escaped the disposable root")
+        elif (
+            claim.filesystem_identity.authoritative_path is None
+            or disposable_boundary is None
+            or not _path_is_within(claim.filesystem_identity.authoritative_path, disposable_boundary)
+        ):
+            failures.append(f"{claim.recovery_id}: authorization claim identity escaped the disposable root")
+        expected_claim_path = journal.claim_file_path(claim.plan_id, claim.plan_item_id)
+        if _canonical_absolute_path(claim.claim_path) != _canonical_absolute_path(expected_claim_path):
+            failures.append(f"{claim.recovery_id}: authorization claim filename is not bound to its item")
+        matching_entries = by_recovery.get(claim.recovery_id, ())
+        for entry in matching_entries:
+            if (
+                entry.plan_id != claim.plan_id
+                or entry.plan_item_id != claim.plan_item_id
+                or entry.original_path != claim.original_path
+                or entry.quarantine_path != claim.quarantine_path
+                or entry.filesystem_identity != claim.filesystem_identity
+            ):
+                failures.append(f"{claim.recovery_id}: authorization claim conflicts with its journal lifecycle")
+                break
+        if claim_path is not None and claim_path.casefold() in expected:
+            _, expected_identity, _ = expected[claim_path.casefold()]
+            if not _same_identity(expected_identity, claim.filesystem_identity):
+                failures.append(f"{claim.recovery_id}: authorization claim identity conflicts with expected payload")
+
+    actual_names: set[str] = set()
+    try:
+        with os.scandir(quarantine_root.path) as iterator:
+            actual_entries = sorted(list(iterator), key=lambda item: (item.name.casefold(), item.name))
+    except OSError as error:
+        failures.append(f"quarantine inventory could not be enumerated: {type(error).__name__}")
+        actual_entries = []
+    for directory_entry in actual_entries:
+        name_key = directory_entry.name.casefold()
+        actual_names.add(name_key)
+        expected_entry = expected.get(name_key)
+        if expected_entry is None:
+            failures.append(f"unexpected quarantine entry: {directory_entry.name}")
+            continue
+        expected_path, expected_identity, entry = expected_entry
+        actual_path = _canonical_absolute_path(directory_entry.path)
+        if actual_path != expected_path:
+            failures.append(f"{entry.recovery_id}: quarantine entry path is not exact")
+            continue
+        _, identity_error = _matching_payload_identity(actual_path, expected_identity, quarantine_root)
+        if identity_error is not None:
+            failures.append(f"{entry.recovery_id}: {identity_error}")
+    for name_key, (expected_path, _identity, entry) in expected.items():
+        if name_key not in actual_names:
+            # A transition may legitimately be between the source and the
+            # destination. All other payload states require the object.
+            if entry.status in _QUARANTINE_TRANSITION_STATES:
+                source_identity, source_error = _observe_identity(entry.original_path)
+                if source_error is None and source_identity is not None and _same_identity(entry.filesystem_identity, source_identity):
+                    continue
+            failures.append(f"{entry.recovery_id}: expected quarantine payload is missing")
+
+    return ReconciliationResult(entries, tuple(dict.fromkeys(failures)), ())
 
 
 def _make_entry(
@@ -1216,10 +1515,19 @@ def reconcile_pending_operations(
     *,
     clock: MutationClock = _utc_now,
 ) -> ReconciliationResult:
-    """Resolve journaled crash windows conservatively without moving data."""
+    """Reconcile pre-existing recovery state using metadata writes only.
+
+    This function may append hash-chained journal records describing an
+    already-existing orphan claim or crash-window state. It never creates a
+    claim or quarantine root, starts a new cleanup lifecycle, moves/deletes a
+    candidate or quarantine payload, or repairs/removes unknown state.
+    """
 
     _require_mutation_roots(disposable_root, quarantine_root)
     _require_bound_journal(journal, disposable_root)
+    inventory = inspect_quarantine_inventory(journal, disposable_root, quarantine_root)
+    if inventory.failures:
+        return inventory
     entries = list(journal.read_entries())
     claims = journal.read_claims()
     journal_claim_keys = {
@@ -1228,6 +1536,7 @@ def reconcile_pending_operations(
         if entry.status is QuarantineState.AUTHORIZATION_CLAIMED
     }
     claim_recoveries: list[ClaimRecovery] = []
+    metadata_appended = False
     for claim in claims:
         key = (claim.plan_id, claim.plan_item_id)
         if key in journal_claim_keys:
@@ -1247,6 +1556,7 @@ def reconcile_pending_operations(
                 timestamp=claim.timestamp,
             )
             journal.append(claimed)
+            metadata_appended = True
             entries.append(claimed)
             journal_claim_keys.add(key)
             recovered = _make_entry(
@@ -1261,16 +1571,17 @@ def reconcile_pending_operations(
                 status=QuarantineState.FAILED,
                 recovery_id=claim.recovery_id,
                 timestamp=clock(),
-                failure_reason="orphan authorization claim reconciled; mutation did not begin",
+                failure_reason="orphan authorization claim reconciled; candidate and payload mutation did not begin",
             )
             journal.append(recovered)
+            metadata_appended = True
             entries.append(recovered)
             claim_recoveries.append(ClaimRecovery(
                 claim.claim_path,
                 claim.plan_id,
                 claim.plan_item_id,
                 ClaimRecoveryState.RECONCILED_FAILED,
-                "orphan authorization claim was journaled as claimed and failed without mutation",
+                "orphan authorization claim was journaled as claimed and failed without candidate or payload mutation",
             ))
         except (JournalError, MutationRefused, OSError) as error:
             claim_recoveries.append(ClaimRecovery(
@@ -1303,6 +1614,7 @@ def reconcile_pending_operations(
             entries.append(recovered)
             try:
                 journal.append(recovered)
+                metadata_appended = True
             except JournalError as error:
                 failures.append(f"{recovery_id}: claim recovery could not be journaled: {error}")
             continue
@@ -1352,11 +1664,14 @@ def reconcile_pending_operations(
             entries.append(recovered)
             try:
                 journal.append(recovered)
+                metadata_appended = True
             except JournalError as error:
                 failures.append(f"{recovery_id}: recoverable state could not be journaled: {error}")
         except (MutationRefused, JournalError, OSError) as error:
             failures.append(f"{recovery_id}: {error}")
-    return ReconciliationResult(tuple(entries), tuple(failures), tuple(claim_recoveries))
+    return ReconciliationResult(
+        tuple(entries), tuple(failures), tuple(claim_recoveries), metadata_appended,
+    )
 
 
 def restore_recovery(

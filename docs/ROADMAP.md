@@ -50,15 +50,19 @@ service work, or network discovery by default.
 - Internal presentation-neutral human-confirmed Cleanup Application Service
   with exact review binding, post-confirmation revalidation, per-item results,
   and conservative orphan-claim recovery.
-- No public cleanup interface, permanent deletion, Windows Recycle Bin
-  integration, or arbitrary user-workspace path API.
+- Internal human-facing CLI adapter over that service, with exact confirmation,
+  deterministic table/JSON review, explicit exit states, quarantine/journal,
+  and same-process Undo by recovery identifier.
+- No public release, Desktop/MCP cleanup interface, permanent deletion,
+  Windows Recycle Bin integration, cross-process capability persistence, or
+  arbitrary raw-path mutation API.
 
 This remains an internal milestone; it is not a public release.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not independently authorize
-execution. The next bounded task is a direct end-to-end audit of the internal
-application flow before any cleanup interface is exposed. Permanent deletion
-remains out of scope until explicitly authorized.
+execution. The next bounded task is a direct audit of the human CLI cleanup
+flow before beginning Desktop integration. Permanent deletion remains out of
+scope until explicitly authorized.
 
 ## v0.4 — Desktop
 

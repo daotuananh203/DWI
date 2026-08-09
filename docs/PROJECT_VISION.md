@@ -50,7 +50,8 @@ machine and from explanation to safe, reversible, auditable cleanup.
 The MVP is deliberately narrow:
 
 - Windows only.
-- CLI/reporting interface only.
+- CLI/reporting interface, with an internal human-confirmed cleanup adapter in
+  v0.3; Desktop and MCP remain future interfaces.
 - Python and Node.js artifact analysis.
 - Minimal Git awareness for protection and context, including `.git` directories and `.git` files.
 - Bounded System Intelligence discovery for approved local roots and
@@ -59,14 +60,16 @@ The MVP is deliberately narrow:
   deterministic cancellation, limits, and partial-result reporting.
 - Deterministic findings with structured evidence and explanations.
 - Four risk labels: `SAFE`, `REGENERATABLE`, `REVIEW_REQUIRED`, and `NEVER_DELETE`.
-- No file deletion, automatic cleanup, desktop UI, web UI, FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis, Ollama analysis, dynamic plugin discovery, or cloud features.
+- No permanent file deletion, automatic/background cleanup, desktop UI, web UI,
+  FastAPI, MCP, LLM integration, Docker analysis, Hugging Face analysis,
+  Ollama analysis, dynamic plugin discovery, or cloud features.
 
 The v0.3 scope remains offline-first and bounded. Its mutation capability is an
 internal engine path for explicitly marked disposable test roots or an
 approved-local-root gate: reversible quarantine/restore plus a
-tamper-detectable append-only journal. Public user-workspace cleanup execution,
-public Trash/Quarantine, Desktop, and MCP are roadmap milestones. The internal
-application service is not a public runtime interface.
+tamper-detectable append-only journal. An internal human-facing CLI adapts the
+application service in one process with no capability persistence; public
+user-workspace cleanup execution, Desktop, and MCP remain roadmap milestones.
 
 ## Release and bilingual strategy
 
@@ -84,7 +87,8 @@ Desktop, CLI, human-facing messages, and documentation are designed for
 localization. Machine-readable contracts remain stable and language-neutral:
 JSON keys, enums, `RiskLabel` values, MCP tool names, API/schema identifiers,
 and internal evidence keys. Public documentation will use `README.md` for
-English and `README.vi.md` for Vietnamese. Runtime i18n is not part of v0.1.
+English and `README.vi.md` for Vietnamese. Runtime i18n is not implemented in
+v0.3.
 
 ## Non-goals
 
