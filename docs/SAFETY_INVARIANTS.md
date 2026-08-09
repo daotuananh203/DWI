@@ -221,10 +221,38 @@ engine-issued approved-local-root gate for real-Windows validation. It
 performs only authorized, reversible same-volume quarantine/restore moves and
 append-only journal writes; the CLI and Desktop are single-process and
 pre-public, with no capability persistence, permanent deletion, or copy/delete
-fallback. MCP remains absent. Any public cleanup
+fallback. v0.5 MCP is a local-only untrusted adapter that stores authority only
+in non-persistent server memory and delegates through the same application
+service. Any public cleanup
 executor still requires a separate approved design covering confirmation,
 recovery, journaling, race conditions, and failure handling.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` are not execution authorization. A
 future executor must require an immutable engine-generated plan, immediate
 revalidation, and explicit `ExecutionAuthorization`.
+
+## v0.5 MCP boundary invariants
+
+41. MCP requests are untrusted. A request may contain only strict schema fields;
+cleanup selection is bound to server-owned scan handles and engine-generated
+finding/item identifiers. Raw mutation paths, safety fields, current
+snapshots, trusted contexts, validation, authorization, and private proof
+objects are rejected.
+
+42. MCP handle authority lives in a server-owned, non-persistent registry.
+Handle kinds are distinct, lookup fails closed, expiry is conservative, and
+execution/recovery handles are atomically one-shot. Restart invalidates all
+authority-bearing handles.
+
+43. MCP cannot create `HumanConfirmation`. The confirmation tool is absent from
+the MCP registry; only a separate trusted human-channel adapter may bind the
+exact immutable review to confirmation. Agent-supplied phrases are not consent.
+
+44. MCP execution calls the existing application service with a fresh engine
+revalidator. Revalidation and authorization remain core-owned immediately
+before mutation, and per-item outcomes/reconciliation state are returned
+without capability material. Undo resolves only server-owned recovery state and
+never accepts a restore destination.
+
+45. v0.5 transport is local stdin/stdout only. No TCP/HTTP listener, cloud
+relay, telemetry, upload, or network mutation is configured.

@@ -53,7 +53,7 @@ service work, or network discovery by default.
 - Internal human-facing CLI adapter over that service, with exact confirmation,
   deterministic table/JSON review, explicit exit states, quarantine/journal,
   and same-process Undo by recovery identifier.
-- No public release, MCP cleanup interface, permanent deletion,
+- No public release, permanent deletion,
   Windows Recycle Bin integration, cross-process capability persistence, or
   arbitrary raw-path mutation API.
 
@@ -78,26 +78,31 @@ of scope until explicitly authorized.
 - Explicit controller/state model, one-worker background boundary, EN/VI
   packaged resources, deterministic desktop entry point, and disposable-fixture
   developer smoke path.
-- Trusted in-process capability model only; no serialized capabilities, MCP,
-  telemetry, cloud/API calls, or permanent deletion.
+- Trusted in-process capability model only; no serialized capabilities,
+  telemetry, cloud/API calls, or permanent deletion. v0.5 supplies the
+  separate untrusted MCP boundary.
 
 This remains an internal milestone; it is not a public release.
 
 ## v0.5 — MCP / Agent Integration
 
-Planned MCP operations:
+- Local-only, stdlib MCP-compatible JSON-RPC over stdin/stdout.
+- Explicit untrusted caller boundary with strict versionable schemas.
+- Server-owned in-memory opaque scan, review, execution, and recovery handles.
+- Read-only scan, summary, finding, and deterministic explanation tools.
+- Engine-bound cleanup review from exact finding IDs only; no raw-path mutation.
+- Trusted human confirmation outside the MCP agent channel.
+- Fresh engine revalidation and existing application-service authorization before
+  one-shot Quarantine execution.
+- Per-item execution reality, reconciliation status, and recovery-handle Undo.
+- Replay-safe atomic execution/Undo consumption and restart invalidation of all
+  authority-bearing handles.
+- No capability/proof serialization, permanent deletion, telemetry, cloud/API,
+  TCP, or HTTP transport.
 
-- `scan_system`
-- `explain_finding`
-- `create_cleanup_plan`
-- `review_cleanup_plan`
-- `validate_cleanup_plan`
-- `execute_cleanup_plan`
-- `undo_cleanup`
-
-MCP must never expose arbitrary raw-path deletion such as
-`delete_file(path)`. Cleanup execution accepts only engine-generated plan and
-plan-item identifiers after immediate revalidation and authorization.
+MCP never exposes arbitrary raw-path deletion such as `delete_file(path)`.
+Cleanup execution accepts only server-owned engine state and preserves the
+existing `PlanValidation` -> `ExecutionAuthorization` chain.
 
 This remains an internal milestone; it is not a public release.
 

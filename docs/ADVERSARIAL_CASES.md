@@ -96,6 +96,28 @@ These cases define the failure-oriented design and future test fixtures. They ar
 - An AI agent attempts arbitrary raw-path deletion or attempts to manufacture
   a risk, validation, or authorization result.
 
+## MCP / Agent boundary
+
+- A random, stale, wrong-type, cross-session, or consumed opaque handle is
+  supplied; lookup fails closed.
+- A caller supplies a finding ID from another scan, a raw path, `RiskLabel`,
+  `ActionEligibility`, snapshots, validation, authorization, or unexpected
+  schema fields; the request is rejected before planning or mutation.
+- An agent sends a confirmation phrase or calls a guessed confirmation tool;
+  no trusted `HumanConfirmation` is created.
+- Two concurrent calls use one execution or recovery handle; exactly one
+  one-shot consumer may proceed.
+- The MCP server restarts; all authority-bearing handles become invalid and no
+  private capability is reconstructed from disk.
+- An execution handle reaches fresh revalidation after evidence, activity,
+  reachability, protection, identity, root, or journal state changes; the
+  existing application service blocks or requires reconciliation.
+- A network root is requested; the existing Scan Safety Gate denies it by
+  default and MCP does not open a network listener.
+- Protocol output accidentally contains a capability, proof, authorization
+  token, traceback, or debug log; the adapter returns only stable read models
+  and machine-readable errors.
+
 Each case must fail closed. Planning and validation record structured reasons;
 the isolated mutation layer additionally owns journaled recovery and replay
 handling below either an explicitly marked disposable temporary root or an

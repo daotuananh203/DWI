@@ -325,3 +325,20 @@ not construct or serialize `TrustedScanContext`, `TrustedSnapshotSet`,
 partial, failed, denied, skipped, or conflicting scan remains visibly
 non-executable. Recovery is addressed by validated recovery identity only;
 there is no raw-path restore operation.
+
+## MCP v0.5 boundary
+
+MCP handles are interface identifiers, not domain authority. The server keeps
+the corresponding `SystemScan`, `CleanupSession`, trusted human confirmation,
+execution runtime, and recovery identity in a non-persistent in-memory store.
+MCP read models may expose paths, evidence, `RiskLabel`, `ActionEligibility`,
+and rule traces as engine outputs, but MCP requests cannot provide or alter any
+of those values. They cannot provide current snapshots, trusted scan context,
+`PlanValidation`, `ExecutionAuthorization`, private proofs, or mutation roots.
+
+Handle kinds are distinct (`scan`, `review`, `execution`, `recovery`), expire
+conservatively, and reject wrong-type, stale, consumed, forged, and
+cross-session use. Execution and Undo handles are consumed atomically before
+engine work. The store is invalidated on process restart. A trusted human
+adapter, not the MCP tool surface, supplies the exact `HumanConfirmation` for
+the exact review.

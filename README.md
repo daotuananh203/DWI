@@ -37,8 +37,8 @@ adapter now presents that flow in one process; it is pre-public, does not
 serialize capabilities, and is not a raw-path mutation API. v0.4 Desktop now
 provides the same flow through a native Tkinter shell, controller/state model,
 background worker, EN/VI resources, findings explanations, and Recovery/Undo.
-MCP remains unimplemented, as do permanent deletion and LLM decision-path
-integration.
+v0.5 MCP is implemented as a local-only untrusted JSON-RPC adapter; permanent
+deletion and LLM decision-path integration remain absent.
 
 Run a bounded report from one explicit workspace root:
 
@@ -50,6 +50,7 @@ python -m dwi scan-system --json
 python -m dwi cleanup PATH
 python -m dwi cleanup PATH --json --confirm-phrase "I reviewed this exact cleanup plan."
 python -m dwi desktop
+python -m dwi mcp
 ```
 
 ## Desktop v0.4
@@ -65,7 +66,8 @@ The application uses the trusted in-process capability model. It never accepts
 a raw cleanup path, manufactures `RiskLabel` or `ActionEligibility`, creates
 `PlanValidation` or `ExecutionAuthorization`, serializes capabilities, or
 performs filesystem mutation directly. Cleanup is Quarantine + Journal + Undo;
-there is no permanent deletion, telemetry, upload, cloud/API call, or MCP yet.
+there is no permanent deletion, telemetry, upload, cloud/API call, or network
+listener. MCP uses stdin/stdout only and treats every caller as untrusted.
 The developer smoke path owns its temporary fixture and never targets
 arbitrary real-machine data.
 
@@ -80,8 +82,8 @@ deterministic partial results. Use `--allow-network` only for an explicit
 opt-in; network scanning is never the default.
 
 DWI analysis and public interfaces are offline-first and read-only. The
-internal human CLI and Desktop are cleanup presentation adapters and only
-delegate through the reviewed disposable-root or approved-local-root gate
+internal human CLI, Desktop, and MCP are cleanup presentation/request adapters
+and only delegate through the reviewed disposable-root or approved-local-root gate
 described above. The gate binds lexical paths to authoritative Windows
 final paths, rejects short-name aliases to protected roots, and claims each
 plan item before writing mutation lifecycle records. DWI performs no telemetry, automatic diagnostic upload, HTTP, cloud, or
@@ -100,6 +102,7 @@ Read the documents in this order:
 6. [Adversarial cases](docs/ADVERSARIAL_CASES.md)
 7. [Roadmap](docs/ROADMAP.md)
 8. [Tasks](TASKS.md)
+9. [MCP boundary](docs/MCP.md)
 
 ## Safety position
 
@@ -128,10 +131,12 @@ The current reversible strategy is DWI-managed same-volume quarantine with a
 chained local journal and recovery identifiers. The internal cleanup CLI is a
 single-process review/confirmation adapter: its engine capabilities are never
 serialized or accepted from callers, and Undo is addressed only by an
-engine-issued recovery identifier during that process. Windows Recycle Bin
-integration is deferred until deterministic recovery metadata, auditable state,
-and restart-safe Undo semantics are demonstrated. There is no public release,
-MCP cleanup interface, arbitrary raw-path mutation API, or permanent deletion.
+engine-issued recovery identifier during that process. MCP adds only
+server-owned opaque handles and does not persist authority across restart.
+Windows Recycle Bin integration is deferred until deterministic recovery
+metadata, auditable state, and restart-safe Undo semantics are demonstrated.
+There is no public release, arbitrary raw-path mutation API, or permanent
+deletion.
 
 Future cleanup operations must consume immutable engine-generated plans and
 validated plan-item identifiers. No interface may expose arbitrary raw-path
@@ -150,8 +155,8 @@ DWI is bilingual:
 - Vietnamese (`vi`) supports Vietnamese users.
 
 Human-facing Desktop, CLI, messages, and documentation will support
-localization. Machine-readable contracts remain stable and language-neutral:
+localization. MCP machine-facing contracts remain stable and language-neutral:
 JSON keys, enums, `RiskLabel` values, MCP tool names, API/schema identifiers,
 and internal evidence keys do not change by language. Future public
 documentation will provide `README.md` in English and `README.vi.md` in
-Vietnamese. Runtime i18n is not implemented in v0.3.
+Vietnamese. Human confirmation remains outside the MCP agent channel.

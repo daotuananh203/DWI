@@ -13,7 +13,8 @@ interfaces over the same core. They must never create an alternate safety path.
 The diagram includes future public cleanup stages. v0.3 also implements an
 internal presentation-neutral application service and a human-facing CLI
 adapter. The CLI and v0.4 Desktop are single-process, pre-public
-presentation/orchestration boundaries; MCP remains unimplemented.
+presentation/orchestration boundaries. v0.5 MCP is a separate local-only
+untrusted request boundary over the same service.
 
 ```text
 Filesystem observations
@@ -44,7 +45,15 @@ ExecutionAuthorization -> Internal Application Service
         v
 Quarantine -> Journal/Undo
         |
-        +--> CLI / Desktop / MCP adapters
+        +--> CLI / Desktop adapters
+        |
+        +--> untrusted MCP request
+                |
+                v
+          strict schemas -> opaque in-memory handle store
+                |
+                v
+          same Application Service / Mutation layer
 ```
 
 The first implementation should use simple typed Python modules. It must not begin with a YAML rule language, dynamic plugin loading, entry-point discovery, distributed services, or unnecessary abstraction layers.
@@ -79,7 +88,7 @@ system; an unknown basename returns no analysis result.
 - **Execution authorization:** pure v0.3 logic issues metadata-only authorization from an internal engine proof bound to the exact plan and validation state; it is not implied by `SAFE`, `ELIGIBLE_FOR_EXPLICIT_ACTION`, copied tokens, or public validation fields.
 - **Mutation Safety Gate:** accepts only the exact authorized plan, its valid immediate validation, a private unconsumed plan-item authorization, and the plan's engine-approved local root. It resolves lexical paths through an authoritative Windows final-path handle API after ordinary ancestry checks, rejects filesystem roots, network/UNC/mapped/unknown volumes, system/protected roots, linked/reparse paths, and root escapes, and compares both path identities at execution time.
 - **Isolated mutation primitive:** accepts only the exact authorized plan and engine-issued disposable or approved-local-root/quarantine/journal capabilities; it atomically claims each plan item before writing lifecycle records, rechecks identity/type/reparse/root/evidence/policy state immediately, and uses only same-filesystem non-overwriting Windows rename.
-- **Cleanup application service:** accepts one engine-generated cleanup session, exact typed human confirmation, and an internal engine revalidator capability. The revalidator must supply a `TrustedSnapshotSet` for the exact plan, bound to fresh evaluation identity, rule-engine version, scan provenance, snapshot digest, and creation time; caller mappings or hand-built snapshots are rejected. After confirmation, the service performs fresh evidence/interpretation/policy validation, obtains one-shot engine authorization, delegates to the internal mutation primitive, and reports each item independently. It accepts no raw path. The internal CLI and v0.4 Desktop are presentation adapters; MCP is not implemented.
+- **Cleanup application service:** accepts one engine-generated cleanup session, exact typed human confirmation, and an internal engine revalidator capability. The revalidator must supply a `TrustedSnapshotSet` for the exact plan, bound to fresh evaluation identity, rule-engine version, scan provenance, snapshot digest, and creation time; caller mappings or hand-built snapshots are rejected. After confirmation, the service performs fresh evidence/interpretation/policy validation, obtains one-shot engine authorization, delegates to the internal mutation primitive, and reports each item independently. It accepts no raw path. The internal CLI and v0.4 Desktop are trusted presentation adapters; v0.5 MCP reaches this service only through server-owned opaque state.
 - **Cleanup execution:** future public executor accepts only authorized engine plans, prefers Trash/Quarantine, and records an audit journal for Undo/recovery.
 
 The scanner adapts each dispatcher result through a single-candidate selection
@@ -115,17 +124,17 @@ Reachability is an ordered hard gate. If a reference or active consumer is confi
 Artifact names are candidate-identification hints only. They never map directly to labels, and runtime uncertainty defaults to `REVIEW_REQUIRED`.
 
 The domain core must not know whether a result came from the internal CLI,
-Desktop, or a future MCP adapter. The CLI and Desktop are presentation
-adapters; MCP remains a future component.
+Desktop, or MCP. The CLI and Desktop are trusted presentation adapters; MCP is
+an untrusted request adapter with no alternate safety engine.
 
 ## Future architecture, explicitly out of MVP
 
-The project may later add an MCP adapter, optional LLM explanation layer,
-broader detector registry, multi-project reachability graph, persistent index,
-or public cleanup executor. Each must consume already-computed core results and
-must not bypass safety policy. The internal disposable-root and approved-local
-mutation primitives are not a public executor or a substitute for proven
-Windows Recycle Bin integration.
+The project may later add an optional LLM explanation layer, broader detector
+registry, multi-project reachability graph, persistent index, or public cleanup
+executor. Each must consume already-computed core results and must not bypass
+safety policy. The internal disposable-root and approved-local mutation
+primitives are not a public executor or a substitute for proven Windows
+Recycle Bin integration.
 
 ## Determinism and auditability
 
@@ -140,9 +149,10 @@ pre-public, single-process human-confirmed `cleanup` adapter. `scan-system` is
 read-only, offline-first, and network-deny-by-default; it performs no
 telemetry, HTTP, cloud, or API communication. The cleanup adapter does not
 accept `delete`, `remove`, or `quarantine` raw-path commands, `--force`, or
-`--yes`, and it does not persist capabilities. Desktop now provides a native
-presentation path over the same application service; MCP remains absent. There
-is no process-wide activity scan, cross-project reachability, or project-wide
+`--yes`, and it does not persist capabilities. Desktop provides a native
+presentation path and MCP provides a local-only opaque-handle request path over
+the same application service. Neither creates a second mutation path. There is
+no process-wide activity scan, cross-project reachability, or project-wide
 package-manager analysis. The internal v0.3 application service delegates
 only reversible quarantine/restore moves after its hard disposable-test-root
 or approved-local-root gate; no public executor, permanent deletion, or
@@ -197,12 +207,13 @@ journal metadata for state that already existed before the new cleanup
 attempt. It is deterministic and idempotent: repeated reconciliation does not
 create duplicate lifecycle records, new claims, quarantine roots, or payloads.
 
-MCP cleanup operations must accept only engine-generated `plan_id` and
-plan-item identifiers. An operation such as `delete_file(path)` is prohibited.
-Execution must revalidate immediately before acting, prefer
-Trash/Quarantine, and remain auditable. These are public executor boundaries;
-the current mutation runtime remains internal and accepts only marked disposable
-test roots or engine-issued approved local roots.
+MCP cleanup operations accept only server-owned opaque handles bound to
+engine-generated scan findings and plan items. An operation such as
+`delete_file(path)` is prohibited. Execution revalidates immediately before
+acting, prefers Quarantine, and remains auditable. The agent cannot provide
+human confirmation or serialized proof/capability objects. The current
+mutation runtime remains internal and accepts only marked disposable test
+roots or engine-issued approved local roots.
 
 ## Localization boundary
 
