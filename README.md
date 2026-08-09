@@ -51,6 +51,8 @@ python -m dwi cleanup PATH
 python -m dwi cleanup PATH --json --confirm-phrase "I reviewed this exact cleanup plan."
 python -m dwi desktop
 python -m dwi mcp
+python -m dwi evaluate-readonly --root PATH --max-seconds 10
+python -m dwi benchmark
 ```
 
 ## Desktop v0.4
@@ -103,6 +105,10 @@ Read the documents in this order:
 7. [Roadmap](docs/ROADMAP.md)
 8. [Tasks](TASKS.md)
 9. [MCP boundary](docs/MCP.md)
+10. [Read-only evaluation](docs/EVALUATION.md)
+11. [Benchmarks](docs/BENCHMARKS.md)
+12. [Windows packaging foundation](docs/BUILD_WINDOWS.md)
+13. [Release readiness](docs/RELEASE_READINESS.md)
 
 ## Safety position
 

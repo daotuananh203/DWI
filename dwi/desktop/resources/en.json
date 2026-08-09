@@ -1,7 +1,7 @@
 {
   "app.title": "DWI Desktop",
   "app.subtitle": "Developer-storage intelligence and safe cleanup",
-  "app.version": "v0.4 Desktop · internal/pre-public",
+  "app.version": "DWI {version} · internal/pre-public",
   "nav.overview": "Overview / Scan",
   "nav.findings": "Findings",
   "nav.review": "Cleanup Review",
@@ -107,7 +107,7 @@
   "settings.files": "Maximum files",
   "settings.network": "Allow explicit network scanning",
   "settings.network_warning": "Network scanning is denied by default and remains read-only.",
-  "settings.trust": "Desktop v0.4 uses the trusted in-process engine boundary. MCP is not included.",
+  "settings.trust": "Desktop uses the trusted in-process engine boundary. MCP remains a separate local-only untrusted boundary.",
   "error.no_scan": "Run a scan before continuing.",
   "error.no_selection": "Select at least one eligible finding.",
   "error.ineligible": "Only engine-eligible findings can be selected.",

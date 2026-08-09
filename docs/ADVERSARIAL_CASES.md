@@ -117,6 +117,10 @@ These cases define the failure-oriented design and future test fixtures. They ar
 - Protocol output accidentally contains a capability, proof, authorization
   token, traceback, or debug log; the adapter returns only stable read models
   and machine-readable errors.
+- A caller sends oversized roots/finding-ID collections, a duplicate-heavy
+  collection, a malformed mixed-type collection, an oversized stdio line, or
+  a forged pagination cursor; the boundary rejects it before expensive engine
+  work and never silently truncates or interprets a partial message.
 
 Each case must fail closed. Planning and validation record structured reasons;
 the isolated mutation layer additionally owns journaled recovery and replay

@@ -256,3 +256,22 @@ never accepts a restore destination.
 
 45. v0.5 transport is local stdin/stdout only. No TCP/HTTP listener, cloud
 relay, telemetry, upload, or network mutation is configured.
+
+## v1.0 hardening Batch 1/2 invariants
+
+46. MCP caller collections are bounded before item validation: roots are capped
+at 32 and cleanup finding IDs at 256. Read-only list results use a maximum
+page size of 100; over-limit input is rejected and never silently truncated.
+
+47. MCP stdio messages and responses are capped at 1 MiB. Oversized input is
+rejected before JSON/schema/engine work, drained without unbounded buffering,
+and does not turn a partial line into a valid request.
+
+48. All public scan limits use finite typed values and shared hard caps of 300
+seconds, 100,000 nodes, and 100,000 files. A zero budget means an immediate
+bounded stop; it never means unlimited work.
+
+49. The developer machine evaluation command is read-only, network-deny by
+default, count/status-oriented, and does not create cleanup, quarantine,
+journal, recovery, or mutation state. Synthetic benchmarks use disposable
+temporary fixtures only.

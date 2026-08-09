@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwi"
+dynamic = ["version"]
+description = "Developer-storage intelligence and safe cleanup for Windows"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "DWI contributors"}]
+dependencies = []
+
+[project.scripts]
+dwi = "dwi.__main__:main"
+dwi-mcp = "dwi.mcp:serve_stdio"
+
+[tool.setuptools.dynamic]
+version = {attr = "dwi.version.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["dwi*"]
+
+[tool.setuptools.package-data]
+"dwi.desktop.resources" = ["*.json"]

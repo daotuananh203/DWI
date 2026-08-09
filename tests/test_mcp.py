@@ -6,6 +6,7 @@ import gc
 import threading
 import unittest
 import weakref
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -33,6 +34,8 @@ from dwi.domain import (
 )
 from dwi.mcp import McpServer, McpService, run_mcp_smoke
 from dwi.mcp.models import McpErrorCode, McpHandleState, McpHandleType, McpServiceError
+from dwi.mcp.server import MCP_MAX_REQUEST_BYTES, MCP_MAX_RESPONSE_BYTES
+from dwi.mcp.schemas import MCP_MAX_FINDING_IDS, MCP_MAX_PAGE_SIZE
 from dwi.mcp.state_store import OpaqueHandleStore
 from dwi.mutation import RestoreResult
 from dwi.pipeline import CandidateEligibility, CandidateSelection, Finding
@@ -239,6 +242,87 @@ class McpBoundaryTests(McpTestBase):
                 result = service.call_tool("dwi_scan_root", {"root": ROOT, **budget})
                 self.assertEqual(result["findings_count"], 1)
         self.assertEqual(len(calls), 3)
+
+    def test_caller_collections_have_hard_cardinality_limits_before_dispatch(self) -> None:
+        calls: list[object] = []
+        service = McpService(scan_fn=lambda options: (calls.append(options), self.scan)[1])
+        exact_roots = [f"C:\\root-{index}" for index in range(32)]
+        service.call_tool("dwi_scan_system", {"roots": exact_roots})
+        self.assertEqual(len(calls), 1)
+        for roots in (exact_roots + ["C:\\too-many"], ["C:\\root"] * 10_000):
+            with self.subTest(length=len(roots)):
+                with self.assertRaises(McpServiceError) as context:
+                    service.call_tool("dwi_scan_system", {"roots": roots})
+                self.assertEqual(context.exception.code, McpErrorCode.RESOURCE_LIMIT)
+        for roots in (["C:\\root", 7], ["C:\\root", True]):
+            with self.subTest(roots=roots):
+                with self.assertRaises(McpServiceError) as context:
+                    service.call_tool("dwi_scan_system", {"roots": roots})
+                self.assertEqual(context.exception.code, McpErrorCode.INVALID_REQUEST)
+        self.assertEqual(len(calls), 1)
+
+    def test_finding_selection_cardinality_and_duplicate_heavy_inputs_fail_closed(self) -> None:
+        scan_result = self.service.call_tool("dwi_scan_root", {"root": ROOT})
+        finding_id = self.service.call_tool("dwi_list_findings", {"scan_handle": scan_result["scan_handle"]})["findings"][0]["finding_id"]
+        too_many = [finding_id] * (MCP_MAX_FINDING_IDS + 1)
+        with self.assertRaises(McpServiceError) as context:
+            self.service.call_tool("dwi_create_cleanup_review", {
+                "scan_handle": scan_result["scan_handle"],
+                "finding_ids": too_many,
+            })
+        self.assertEqual(context.exception.code, McpErrorCode.RESOURCE_LIMIT)
+        for values in ([], [finding_id, 42]):
+            with self.subTest(values=values):
+                with self.assertRaises(McpServiceError) as context:
+                    self.service.call_tool("dwi_create_cleanup_review", {
+                        "scan_handle": scan_result["scan_handle"],
+                        "finding_ids": values,
+                    })
+                self.assertEqual(context.exception.code, McpErrorCode.INVALID_REQUEST)
+
+    def test_list_findings_paginates_with_bounded_limit_and_stable_cursor(self) -> None:
+        scan = replace(self.scan, workspace_findings=tuple(_finding(ROOT + f"\\cache-{index}") for index in range(3)))
+        service = McpService(scan_fn=lambda _options: scan)
+        handle = service.call_tool("dwi_scan_root", {"root": ROOT})["scan_handle"]
+        first = service.call_tool("dwi_list_findings", {"scan_handle": handle, "limit": 1})
+        self.assertEqual(first["pagination"]["returned"], 1)
+        self.assertIsNotNone(first["pagination"]["next_cursor"])
+        second = service.call_tool("dwi_list_findings", {
+            "scan_handle": handle,
+            "limit": MCP_MAX_PAGE_SIZE,
+            "cursor": first["pagination"]["next_cursor"],
+        })
+        self.assertEqual(second["pagination"]["returned"], 2)
+        self.assertIsNone(second["pagination"]["next_cursor"])
+        with self.assertRaises(McpServiceError) as context:
+            service.call_tool("dwi_list_findings", {"scan_handle": handle, "limit": MCP_MAX_PAGE_SIZE + 1})
+        self.assertEqual(context.exception.code, McpErrorCode.INVALID_REQUEST)
+
+    def test_stdio_rejects_oversized_request_and_remains_usable(self) -> None:
+        oversized = "{" + ("x" * MCP_MAX_REQUEST_BYTES) + "}\n"
+        valid = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) + "\n"
+        output = io.StringIO()
+        McpServer(self.service).serve_stdio(io.StringIO(oversized + valid), output)
+        responses = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(responses[0]["error"]["data"]["code"], McpErrorCode.RESOURCE_LIMIT.value)
+        self.assertIn("result", responses[1])
+
+    def test_oversized_response_is_replaced_by_bounded_protocol_error(self) -> None:
+        class HugeService:
+            tool_definitions = ()
+
+            def call_tool(self, _name: str, _arguments: object) -> dict[str, object]:
+                return {"payload": "x" * (MCP_MAX_RESPONSE_BYTES + 1)}
+
+        response = McpServer(HugeService()).handle_message({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "huge", "arguments": {}},
+        })
+        assert response is not None
+        self.assertEqual(response["error"]["data"]["code"], McpErrorCode.RESOURCE_LIMIT.value)
+        self.assertLessEqual(len(json.dumps(response).encode("utf-8")), MCP_MAX_RESPONSE_BYTES)
 
     def test_selection_is_bound_to_exact_scan_and_raw_safety_fields_are_rejected(self) -> None:
         first = self.service.call_tool("dwi_scan_root", {"root": ROOT})

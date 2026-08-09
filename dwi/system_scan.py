@@ -16,7 +16,14 @@ from .dispatcher import AnalysisResult
 from .global_storage import inspect_global_storage, interpret_global_storage
 from .git_context import GitContextObservation
 from .pipeline import Finding, evaluate_analysis
-from .scan_control import ScanBudget, ScanLimits, ScanTermination
+from .scan_control import (
+    DEFAULT_MAX_FILES,
+    DEFAULT_MAX_NODES,
+    DEFAULT_MAX_SECONDS,
+    ScanBudget,
+    ScanLimits,
+    ScanTermination,
+)
 from .scanner import scan_workspace
 from .size import collect_size
 from .domain import ObservationStatus
@@ -88,9 +95,9 @@ class SystemScanOptions:
     allow_network: bool = False
     limits: ScanLimits = field(
         default_factory=lambda: ScanLimits(
-            max_seconds=300.0,
-            max_nodes=100_000,
-            max_files=100_000,
+            max_seconds=DEFAULT_MAX_SECONDS,
+            max_nodes=DEFAULT_MAX_NODES,
+            max_files=DEFAULT_MAX_FILES,
         )
     )
     cancellation: Callable[[], bool] | None = None

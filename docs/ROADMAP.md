@@ -106,7 +106,7 @@ existing `PlanValidation` -> `ExecutionAuthorization` chain.
 
 This remains an internal milestone; it is not a public release.
 
-## v1.0 — Public Complete
+## v1.0 — Hardening in progress
 
 - Desktop + CLI + MCP.
 - Windows whole-system developer-storage discovery.
@@ -121,6 +121,14 @@ This remains an internal milestone; it is not a public release.
 - Real-world validation and benchmarks.
 - Polished public documentation.
 - English (`en`) and Vietnamese (`vi`) localization.
+
+Batch 1/2 hardening foundation is implemented: MCP cardinality and message
+limits, pagination, shared resource validation, safety regression evidence,
+fault/recovery documentation, read-only evaluation, synthetic benchmarks,
+single-source versioning, package metadata, Windows build foundation, and
+release-readiness tracking. Final installer validation, branding/signing,
+public documentation polish, and the final public-release audit remain the
+single authorized next task.
 
 The v1.0.0 public release is allowed only when every item above is complete
 and the complete North Star is reached. Desktop, CLI, and MCP must use the

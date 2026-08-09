@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 import time
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
+
+
+# Shared conservative resource gate. Every public adapter may reduce these
+# values but must not expand them without a future safety review.
+DEFAULT_MAX_SECONDS = 300.0
+DEFAULT_MAX_NODES = 100_000
+DEFAULT_MAX_FILES = 100_000
+MAX_SCAN_SECONDS = DEFAULT_MAX_SECONDS
+MAX_SCAN_NODES = DEFAULT_MAX_NODES
+MAX_SCAN_FILES = DEFAULT_MAX_FILES
+MAX_SCAN_ROOTS = 32
 
 
 class ScanTermination(str, Enum):
@@ -18,20 +30,35 @@ class ScanTermination(str, Enum):
 
 @dataclass(frozen=True)
 class ScanLimits:
-    """Optional bounds for one read-only scan."""
+    """Finite bounds for one read-only scan.
 
-    max_seconds: float | None = None
-    max_nodes: int | None = None
-    max_files: int | None = None
+    ``None`` is accepted for compatibility with older adapters but is
+    normalized to the shared conservative default; no public scan becomes
+    unlimited by omission.
+    """
+
+    max_seconds: float | None = DEFAULT_MAX_SECONDS
+    max_nodes: int | None = DEFAULT_MAX_NODES
+    max_files: int | None = DEFAULT_MAX_FILES
 
     def __post_init__(self) -> None:
-        for name, value in (
-            ("max_seconds", self.max_seconds),
-            ("max_nodes", self.max_nodes),
-            ("max_files", self.max_files),
-        ):
-            if value is not None and value < 0:
+        numeric = (
+            ("max_seconds", self.max_seconds, (int, float), MAX_SCAN_SECONDS, DEFAULT_MAX_SECONDS),
+            ("max_nodes", self.max_nodes, (int,), MAX_SCAN_NODES, DEFAULT_MAX_NODES),
+            ("max_files", self.max_files, (int,), MAX_SCAN_FILES, DEFAULT_MAX_FILES),
+        )
+        for name, value, accepted_types, maximum, fallback in numeric:
+            if value is None:
+                object.__setattr__(self, name, fallback)
+                value = fallback
+            if isinstance(value, bool) or not isinstance(value, accepted_types):
+                raise ValueError(f"{name} has an invalid numeric type")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(f"{name} must be finite")
+            if value < 0:
                 raise ValueError(f"{name} must not be negative")
+            if value > maximum:
+                raise ValueError(f"{name} exceeds its hard maximum of {maximum}")
 
 
 @dataclass

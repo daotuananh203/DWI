@@ -215,6 +215,23 @@ human confirmation or serialized proof/capability objects. The current
 mutation runtime remains internal and accepts only marked disposable test
 roots or engine-issued approved local roots.
 
+## v1.0 hardening foundation
+
+The public scan adapters use shared finite limits: 300 seconds, 100,000 nodes,
+and 100,000 files. Booleans, non-finite numbers, invalid numeric types, and
+over-limit values are rejected before scan dispatch; omitted limits resolve to
+those bounded defaults rather than unlimited traversal. MCP collection inputs
+are bounded before item validation and large read models use bounded,
+read-only pagination. Its local stdio transport caps requests and responses at
+1 MiB and never opens a network listener.
+
+The release-readiness layer adds a read-only real-machine evaluation command,
+disposable synthetic scan/pagination benchmarks, single-source development
+versioning, package metadata, and a Windows build script. These adapters do
+not create journal, quarantine, recovery, or authorization state. Build
+artifacts, installer/signing validation, and public release remain outside this
+batch.
+
 ## Localization boundary
 
 Human-facing Desktop, CLI, messages, and documentation use a shared

@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
+from .benchmark import DEFAULT_SCALES, run_benchmarks
 from .cleanup_cli import run_cleanup
+from .evaluation import run_readonly_evaluation
 from .report import json_report, json_system_report, table_report, table_system_report
 from .scanner import WorkspaceScanError, scan_workspace
-from .scan_control import ScanLimits
+from .scan_control import MAX_SCAN_ROOTS, ScanLimits
 from .system_scan import SystemScanOptions, scan_system
+from .version import __version__
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dwi")
+    parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
     scan = commands.add_parser("scan", help="scan one explicit workspace root")
     scan.add_argument("path")
@@ -32,6 +37,14 @@ def main(argv: list[str] | None = None) -> int:
     system.add_argument("--json", action="store_true", dest="as_json")
     commands.add_parser("desktop", help="launch the Windows Desktop application")
     commands.add_parser("mcp", help="run the local stdio MCP server")
+    evaluation = commands.add_parser("evaluate-readonly", help="run a developer-only read-only machine evaluation")
+    evaluation.add_argument("--root", dest="root")
+    evaluation.add_argument("--allow-network", action="store_true", dest="allow_network")
+    evaluation.add_argument("--max-seconds", type=float, dest="max_seconds")
+    evaluation.add_argument("--max-nodes", type=int, dest="max_nodes")
+    evaluation.add_argument("--max-files", type=int, dest="max_files")
+    benchmark = commands.add_parser("benchmark", help="run bounded synthetic scan/pagination benchmarks")
+    benchmark.add_argument("--scale", action="append", type=int, dest="scales")
     args = parser.parse_args(argv)
     if args.command == "desktop":
         from .desktop import run_desktop
@@ -41,8 +54,36 @@ def main(argv: list[str] | None = None) -> int:
         from .mcp import serve_stdio
 
         return serve_stdio()
+    if args.command == "evaluate-readonly":
+        try:
+            defaults = SystemScanOptions().limits
+            limits = ScanLimits(
+                max_seconds=args.max_seconds if args.max_seconds is not None else defaults.max_seconds,
+                max_nodes=args.max_nodes if args.max_nodes is not None else defaults.max_nodes,
+                max_files=args.max_files if args.max_files is not None else defaults.max_files,
+            )
+            result = run_readonly_evaluation(
+                root=args.root,
+                limits=limits,
+                allow_network=args.allow_network,
+            )
+        except (ValueError, OSError) as error:
+            print(f"dwi: read-only evaluation could not start: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(result.to_dict(), ensure_ascii=False, sort_keys=True, indent=2))
+        return 0
+    if args.command == "benchmark":
+        try:
+            result = run_benchmarks(tuple(args.scales) if args.scales else DEFAULT_SCALES)
+        except ValueError as error:
+            print(f"dwi: benchmark could not start: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
+        return 0
     if args.command == "scan-system":
         try:
+            if len(args.roots) > MAX_SCAN_ROOTS:
+                raise ValueError(f"at most {MAX_SCAN_ROOTS} roots may be requested")
             has_explicit_roots = bool(args.roots)
             option_values = {
                 "additional_roots": tuple(args.roots),

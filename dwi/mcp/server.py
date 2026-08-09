@@ -1,4 +1,4 @@
-"""Minimal local MCP JSON-RPC server over stdin/stdout."""
+"""Minimal local MCP JSON-RPC server over bounded stdin/stdout messages."""
 
 from __future__ import annotations
 
@@ -6,8 +6,20 @@ import json
 import sys
 from typing import TextIO
 
+from ..version import __version__
 from .models import McpErrorCode, McpServiceError
 from .service import McpService
+
+
+# A line-oriented local transport still needs explicit resource limits. The
+# limits are intentionally conservative and independent of scan budgets.
+MCP_MAX_REQUEST_BYTES = 1_048_576
+MCP_MAX_RESPONSE_BYTES = 1_048_576
+_MAX_READ_CHARS = MCP_MAX_REQUEST_BYTES + 2
+
+
+def _json_bytes(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 class McpServer:
@@ -24,7 +36,7 @@ class McpServer:
             "isError": True,
         }
 
-    def handle_message(self, message: object) -> dict[str, object] | None:
+    def _handle_message(self, message: object) -> dict[str, object] | None:
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         request_id = message.get("id")
@@ -40,7 +52,7 @@ class McpServer:
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "dwi-mcp", "version": "0.5.0"},
+                    "serverInfo": {"name": "dwi-mcp", "version": __version__},
                 },
             }
         if method == "tools/list":
@@ -65,19 +77,89 @@ class McpServer:
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
 
+    def _response_size_guard(self, response: dict[str, object] | None) -> dict[str, object] | None:
+        if response is None:
+            return None
+        if len(_json_bytes(response)) <= MCP_MAX_RESPONSE_BYTES:
+            return response
+        return {
+            "jsonrpc": "2.0",
+            "id": response.get("id"),
+            "error": {
+                "code": -32002,
+                "message": "MCP response exceeds the maximum message size",
+                "data": {
+                    "code": McpErrorCode.RESOURCE_LIMIT.value,
+                    "max_bytes": MCP_MAX_RESPONSE_BYTES,
+                },
+            },
+        }
+
+    def handle_message(self, message: object) -> dict[str, object] | None:
+        return self._response_size_guard(self._handle_message(message))
+
+    @staticmethod
+    def _read_line_bounded(input_stream: TextIO) -> tuple[str | None, bool]:
+        line = input_stream.readline(_MAX_READ_CHARS)
+        if not line:
+            return None, False
+        payload = line.split("\n", 1)[0].rstrip("\r")
+        oversized = len(payload.encode("utf-8", errors="replace")) > MCP_MAX_REQUEST_BYTES
+        if "\n" not in line and len(line) >= _MAX_READ_CHARS:
+            oversized = True
+        if oversized:
+            # Drain only this line, one character at a time, so a valid request
+            # following the rejected message remains available to the server.
+            while "\n" not in line:
+                character = input_stream.read(1)
+                if not character:
+                    break
+                line = character
+        return (None if oversized else payload), oversized
+
     def serve_stdio(self, input_stream: TextIO | None = None, output_stream: TextIO | None = None) -> int:
         input_stream = input_stream or sys.stdin
         output_stream = output_stream or sys.stdout
-        for line in input_stream:
-            if not line.strip():
+        while True:
+            line, oversized = self._read_line_bounded(input_stream)
+            if line is None and not oversized:
+                break
+            if oversized:
+                response: dict[str, object] | None = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {
+                        "code": -32001,
+                        "message": "MCP request exceeds the maximum message size",
+                        "data": {
+                            "code": McpErrorCode.RESOURCE_LIMIT.value,
+                            "max_bytes": MCP_MAX_REQUEST_BYTES,
+                        },
+                    },
+                }
+            elif not line or not line.strip():
                 continue
-            try:
-                message = json.loads(line)
-                response = self.handle_message(message)
-            except json.JSONDecodeError:
-                response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
+            else:
+                try:
+                    response = self.handle_message(json.loads(line))
+                except json.JSONDecodeError:
+                    response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
             if response is not None:
-                output_stream.write(json.dumps(response, ensure_ascii=False, sort_keys=True) + "\n")
+                encoded = _json_bytes(response)
+                # The guard above should make this branch unreachable for
+                # ordinary responses; keep a final bounded fallback at the
+                # transport write boundary.
+                if len(encoded) > MCP_MAX_RESPONSE_BYTES:
+                    encoded = _json_bytes({
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {
+                            "code": -32002,
+                            "message": "MCP response exceeds the maximum message size",
+                            "data": {"code": McpErrorCode.RESOURCE_LIMIT.value, "max_bytes": MCP_MAX_RESPONSE_BYTES},
+                        },
+                    })
+                output_stream.write(encoded.decode("utf-8") + "\n")
                 output_stream.flush()
         return 0
 

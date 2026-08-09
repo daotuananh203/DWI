@@ -3,10 +3,10 @@
 ## Current state
 
 v0.1 Workspace Intelligence, v0.2 System Intelligence, v0.3 Safe Cleanup,
-the Windows Mutation Safety Gate, human-confirmed reversible cleanup, and the
-internal cleanup CLI, and v0.4 Desktop are frozen. v0.5 MCP / Agent Integration
-is implemented as a local-only untrusted JSON-RPC adapter over the same
-deterministic engine.
+the Windows Mutation Safety Gate, human-confirmed reversible cleanup, the
+internal cleanup CLI, v0.4 Desktop, and v0.5 MCP / Agent Integration are
+frozen. v1.0 hardening Batch 1/2 is implemented in the current working tree as
+release-readiness engineering over the same deterministic engine.
 
 Desktop provides system scan overview, findings filtering and explanations,
 exact cleanup review, typed HumanConfirmation, fresh engine revalidation,
@@ -39,20 +39,41 @@ and MCP adapters do not introduce persistence, a daemon, cloud features, AI
 safety decisions, or a second mutation path. MCP uses local stdin/stdout only
 and has no TCP/HTTP listener.
 
+## Current v1.0 hardening boundary
+
+Batch 1/2 adds MCP resource limits and pagination, shared finite scan limits,
+explicit safety/regression evidence, read-only machine evaluation, synthetic
+benchmarks, single-source versioning, package metadata, Windows build
+foundation, clean-environment smoke, and release-readiness documentation. It
+does not add final installer branding, public publishing, or release polish.
+
 ## Next task — exactly one
 
-- [ ] v1.0 hardening, packaging, evaluation, documentation, and public-release readiness.
+- [ ] v1.0 Release Polish, Installer Validation, Documentation, and Final Public Release Audit.
 
 ### Acceptance criteria
 
-- Harden and evaluate the frozen v0.1-v0.5 system before any public release.
-- Do not begin this task in the current milestone.
+- Complete final release polish, installer validation, documentation review,
+  and public-release audit only after this batch is reviewed.
+- Do not begin that task in the current batch.
 
-### Recorded v1.0 hardening debt
+### Recorded hardening evidence/debt
 
-1. Add explicit maximum item counts/request-cardinality bounds for caller
-   arrays such as MCP `roots` and `finding_ids`.
-2. Add an explicit maximum request/message size to the MCP stdio transport.
+1. MCP caller cardinality and stdio message-size debts are closed in Batch 1/2.
+
+### Mandatory v1.0 Batch 2 release blockers/debts
+
+A. Package artifact build is not verified in the current environment because
+   the `build` package is unavailable.
+B. Wheel/sdist installation has not been verified in a clean environment.
+C. Windows installer build and validation remain incomplete.
+D. Signing strategy and status remain unresolved.
+E. Open-source licensing and dependency-license review remain incomplete.
+F. Final public EN/VI documentation remains incomplete.
+G. Final public-release audit remains incomplete.
+H. Direct `ScanLimits` accepts `0` and terminates immediately while MCP rejects
+   `0`; this is conservative rather than fail-open and may be resolved or
+   documented for public API consistency in Batch 2.
 
 Future work in [docs/ROADMAP.md](docs/ROADMAP.md) is not authorized until this
 is the single task in this file.

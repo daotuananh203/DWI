@@ -7,9 +7,10 @@ from dataclasses import dataclass, replace
 from importlib import resources
 from typing import Mapping
 
+from ..version import __version__
 
 SUPPORTED_LOCALES = ("en", "vi")
-DESKTOP_VERSION = "0.4.0-internal"
+DESKTOP_VERSION = __version__
 
 
 class LocaleCatalog:

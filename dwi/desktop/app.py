@@ -9,7 +9,7 @@ from typing import Any
 
 from ..domain import RiskLabel
 from .controller import DesktopController, DesktopState
-from .i18n import SUPPORTED_LOCALES
+from .i18n import DESKTOP_VERSION, SUPPORTED_LOCALES
 
 
 def _bytes(value: int) -> str:
@@ -64,7 +64,7 @@ class DesktopApp:
         self.title_label.grid(row=0, column=0, sticky="w")
         self.subtitle_label = self._label(header, "app.subtitle")
         self.subtitle_label.grid(row=1, column=0, sticky="w")
-        self.version_label = self._label(header, "app.version")
+        self.version_label = self._label(header, "app.version", version=DESKTOP_VERSION)
         self.version_label.grid(row=2, column=0, sticky="w")
         self.status_var = tk.StringVar()
         ttk.Label(header, textvariable=self.status_var, anchor="e").grid(row=0, column=1, rowspan=2, sticky="e")

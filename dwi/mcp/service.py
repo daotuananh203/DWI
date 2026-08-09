@@ -33,7 +33,9 @@ from ..report import _json_value, finding_to_dict, system_to_dict
 from ..scan_control import ScanLimits
 from ..system_scan import SystemScan, SystemScanOptions, scan_system
 from .models import McpErrorCode, McpHandleState, McpHandleType, McpServiceError
+from .pagination import page_items
 from .schemas import (
+    MCP_DEFAULT_PAGE_SIZE,
     MCP_DEFAULT_MAX_FILES,
     MCP_DEFAULT_MAX_NODES,
     MCP_DEFAULT_MAX_SECONDS,
@@ -93,15 +95,30 @@ def _finding_id(scan_handle: str, finding: Finding) -> str:
     return "finding_" + hashlib.sha256(raw).hexdigest()[:32]
 
 
-def _scan_summary(scan: SystemScan) -> dict[str, object]:
+def _scan_summary(
+    scan: SystemScan,
+    *,
+    page_key: str,
+    limit: int = MCP_DEFAULT_PAGE_SIZE,
+    cursor: object = None,
+) -> dict[str, object]:
     report = system_to_dict(scan)
+    roots = report["root_observations"]
+    page = page_items(roots, key=f"{page_key}:roots", limit=limit, cursor=cursor, maximum=100)
+    requested_roots = report["requested_roots"][page.start:page.start + len(page.items)]
     return {
-        "requested_roots": report["requested_roots"],
-        "root_observations": report["root_observations"],
+        "requested_roots": requested_roots,
+        "root_observations": list(page.items),
         "observation_failures": report["observation_failures"],
         "ambiguous_boundaries": report["ambiguous_boundaries"],
         "scan_metadata": report["scan_metadata"],
         "summary": report["summary"],
+        "pagination": {
+            "limit": page.limit,
+            "returned": len(page.items),
+            "total": page.total,
+            "next_cursor": page.next_cursor,
+        },
     }
 
 
@@ -135,7 +152,22 @@ def _plan_item_model(item: object) -> dict[str, object]:
     }
 
 
-def _review_model(handle: str, state: McpHandleState, review: _ReviewState) -> dict[str, object]:
+def _review_model(
+    handle: str,
+    state: McpHandleState,
+    review: _ReviewState,
+    *,
+    limit: int = MCP_DEFAULT_PAGE_SIZE,
+    cursor: object = None,
+) -> dict[str, object]:
+    plan_page = page_items(
+        tuple(review.plan.items),
+        key=f"{handle}:review-items",
+        limit=limit,
+        cursor=cursor,
+        maximum=100,
+    )
+    exclusions = tuple(review.plan.exclusions)
     return {
         "status": state.value,
         "review_handle": handle,
@@ -143,12 +175,18 @@ def _review_model(handle: str, state: McpHandleState, review: _ReviewState) -> d
         "plan_id": review.plan.plan_id.value,
         "engine_version": review.plan.engine_version,
         "approved_root": review.plan.approved_root.path,
-        "items": [_plan_item_model(item) for item in review.plan.items],
+        "items": [_plan_item_model(item) for item in plan_page.items],
         "exclusions": [
             {"artifact": item.artifact.value, "path": item.path, "reason": item.reason}
-            for item in review.plan.exclusions
+            for item in exclusions[plan_page.start:plan_page.start + len(plan_page.items)]
         ],
         "human_confirmation": "received" if review.confirmation is not None else "required",
+        "pagination": {
+            "limit": plan_page.limit,
+            "returned": len(plan_page.items),
+            "total": plan_page.total,
+            "next_cursor": plan_page.next_cursor,
+        },
     }
 
 
@@ -241,7 +279,7 @@ class McpService:
         return {
             "status": McpHandleState.ACTIVE.value,
             "scan_handle": handle,
-            "summary": _scan_summary(scan),
+            "summary": _scan_summary(scan, page_key=handle),
             "findings_count": len(remapped),
         }
 
@@ -266,14 +304,37 @@ class McpService:
 
     def get_scan_summary(self, arguments: dict[str, Any]) -> dict[str, object]:
         entry = self._scan_entry(arguments["scan_handle"])
-        return {"status": entry.state.value, "scan_handle": entry.handle, "summary": _scan_summary(entry.payload.scan)}
-
-    def list_findings(self, arguments: dict[str, Any]) -> dict[str, object]:
-        entry = self._scan_entry(arguments["scan_handle"])
         return {
             "status": entry.state.value,
             "scan_handle": entry.handle,
-            "findings": [_finding_model(finding_id, finding) for finding_id, finding in sorted(entry.payload.findings.items())],
+            "summary": _scan_summary(
+                entry.payload.scan,
+                page_key=entry.handle,
+                limit=arguments.get("limit", MCP_DEFAULT_PAGE_SIZE),
+                cursor=arguments.get("cursor"),
+            ),
+        }
+
+    def list_findings(self, arguments: dict[str, Any]) -> dict[str, object]:
+        entry = self._scan_entry(arguments["scan_handle"])
+        ordered = tuple(sorted(entry.payload.findings.items()))
+        page = page_items(
+            ordered,
+            key=f"{entry.handle}:findings",
+            limit=arguments.get("limit", MCP_DEFAULT_PAGE_SIZE),
+            cursor=arguments.get("cursor"),
+            maximum=100,
+        )
+        return {
+            "status": entry.state.value,
+            "scan_handle": entry.handle,
+            "findings": [_finding_model(finding_id, finding) for finding_id, finding in page.items],
+            "pagination": {
+                "limit": page.limit,
+                "returned": len(page.items),
+                "total": page.total,
+                "next_cursor": page.next_cursor,
+            },
         }
 
     def get_finding(self, arguments: dict[str, Any], *, explanation: bool = False) -> dict[str, object]:
@@ -322,7 +383,13 @@ class McpService:
 
     def get_cleanup_review(self, arguments: dict[str, Any]) -> dict[str, object]:
         entry = self._review_entry(arguments["review_handle"])
-        return _review_model(entry.handle, entry.state, entry.payload)
+        return _review_model(
+            entry.handle,
+            entry.state,
+            entry.payload,
+            limit=arguments.get("limit", MCP_DEFAULT_PAGE_SIZE),
+            cursor=arguments.get("cursor"),
+        )
 
     def confirm_from_human_channel(
         self,
@@ -371,7 +438,14 @@ class McpService:
     def _execution_entry(self, handle: object, *, allow_consumed: bool = False):
         return self._store.resolve(handle, McpHandleType.EXECUTION, allow_consumed=allow_consumed)
 
-    def _safe_execution_result(self, execution_handle: str, execution: _ExecutionState) -> dict[str, object]:
+    def _safe_execution_result(
+        self,
+        execution_handle: str,
+        execution: _ExecutionState,
+        *,
+        limit: int = MCP_DEFAULT_PAGE_SIZE,
+        cursor: object = None,
+    ) -> dict[str, object]:
         result = execution.result
         if result is None:
             return {"status": execution.status, "execution_handle": execution_handle, "error": execution.error}
@@ -379,6 +453,13 @@ class McpService:
         for recovery_handle in execution.recovery_handles:
             recovery_entry = self._store.resolve(recovery_handle, McpHandleType.RECOVERY, allow_consumed=True)
             recovery_by_item[recovery_entry.payload.recovery_id] = recovery_handle
+        item_page = page_items(
+            result.item_results,
+            key=f"{execution_handle}:execution-items",
+            limit=limit,
+            cursor=cursor,
+            maximum=100,
+        )
         return {
             "status": _result_status(result),
             "execution_handle": execution_handle,
@@ -397,8 +478,14 @@ class McpService:
                     "recovery_id": item.recovery_id,
                     "reason": item.reason,
                 }
-                for item in result.item_results
+                for item in item_page.items
             ],
+            "pagination": {
+                "limit": item_page.limit,
+                "returned": len(item_page.items),
+                "total": item_page.total,
+                "next_cursor": item_page.next_cursor,
+            },
         }
 
     def execute_cleanup(self, arguments: dict[str, Any]) -> dict[str, object]:
@@ -433,7 +520,12 @@ class McpService:
 
     def get_execution_status(self, arguments: dict[str, Any]) -> dict[str, object]:
         entry = self._execution_entry(arguments["execution_handle"], allow_consumed=True)
-        return self._safe_execution_result(entry.handle, entry.payload)
+        return self._safe_execution_result(
+            entry.handle,
+            entry.payload,
+            limit=arguments.get("limit", MCP_DEFAULT_PAGE_SIZE),
+            cursor=arguments.get("cursor"),
+        )
 
     def _recovery_model(self, handle: str, state: _RecoveryState) -> dict[str, object]:
         entry = None
@@ -460,13 +552,26 @@ class McpService:
     def get_recovery_status(self, arguments: dict[str, Any]) -> dict[str, object]:
         execution_entry = self._execution_entry(arguments["execution_handle"], allow_consumed=True)
         execution: _ExecutionState = execution_entry.payload
+        page = page_items(
+            tuple(execution.recovery_handles),
+            key=f"{execution_entry.handle}:recoveries",
+            limit=arguments.get("limit", MCP_DEFAULT_PAGE_SIZE),
+            cursor=arguments.get("cursor"),
+            maximum=100,
+        )
         return {
             "status": execution.status,
             "execution_handle": execution_entry.handle,
             "recoveries": [
                 self._recovery_model(handle, self._store.resolve(handle, McpHandleType.RECOVERY, allow_consumed=True).payload)
-                for handle in execution.recovery_handles
+                for handle in page.items
             ],
+            "pagination": {
+                "limit": page.limit,
+                "returned": len(page.items),
+                "total": page.total,
+                "next_cursor": page.next_cursor,
+            },
         }
 
     def request_undo(self, arguments: dict[str, Any]) -> dict[str, object]:

@@ -342,3 +342,18 @@ cross-session use. Execution and Undo handles are consumed atomically before
 engine work. The store is invalidated on process restart. A trusted human
 adapter, not the MCP tool surface, supplies the exact `HumanConfirmation` for
 the exact review.
+
+## v1.0 resource and evaluation contracts
+
+Finite scan limits are part of the public adapter contract: the shared hard
+maximums are 300 seconds, 100,000 nodes, and 100,000 files, and zero is a
+bounded stop rather than an unlimited mode. MCP roots, finding-ID selections,
+and page sizes are cardinality-bounded and over-limit collections are rejected
+without truncation. Pagination cursors are read-only result-set positions and
+are not domain identifiers or mutation authority.
+
+The developer-machine evaluation model is explicitly read-only: it reports
+counts and boundary statuses without creating cleanup sessions, claims,
+journals, quarantine payloads, recovery entries, or mutation state. Synthetic
+benchmark fixtures are disposable and are not domain observations or release
+evidence for arbitrary user data.

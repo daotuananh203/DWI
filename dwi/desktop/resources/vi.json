@@ -1,7 +1,7 @@
 {
   "app.title": "DWI Desktop",
   "app.subtitle": "Trí tuệ lưu trữ lập trình viên và dọn dẹp an toàn",
-  "app.version": "v0.4 Desktop · nội bộ/chưa công khai",
+  "app.version": "DWI {version} · nội bộ/chưa công khai",
   "nav.overview": "Tổng quan / Quét",
   "nav.findings": "Phát hiện",
   "nav.review": "Xem xét dọn dẹp",
@@ -107,7 +107,7 @@
   "settings.files": "Số file tối đa",
   "settings.network": "Cho phép quét mạng rõ ràng",
   "settings.network_warning": "Quét mạng bị từ chối mặc định và vẫn chỉ-đọc.",
-  "settings.trust": "Desktop v0.4 dùng boundary engine tin cậy trong cùng process. Chưa có MCP.",
+  "settings.trust": "Desktop dùng boundary engine tin cậy trong cùng process. MCP là boundary local riêng, không tin cậy.",
   "error.no_scan": "Hãy chạy quét trước.",
   "error.no_selection": "Chọn ít nhất một phát hiện đủ điều kiện.",
   "error.ineligible": "Chỉ phát hiện đủ điều kiện từ engine mới được chọn.",

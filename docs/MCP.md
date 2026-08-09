@@ -11,6 +11,11 @@ stdin/stdout. `python -m dwi mcp` and `python -m dwi.mcp` do not open TCP,
 HTTP, or cloud listeners. Protocol output is written only to stdout; no debug
 logging is written there.
 
+The stdio transport accepts at most 1 MiB per incoming JSON message and emits
+at most 1 MiB per response. An oversized line is rejected before JSON/schema
+processing, drained without retaining it, and the next complete line remains
+usable. Oversized responses return a bounded `RESOURCE_LIMIT` protocol error.
+
 No dependency was added. A future packaged MCP SDK may replace this small
 adapter only if it preserves the same schemas and trust boundary.
 
@@ -22,6 +27,11 @@ request zero, negative, non-integral integer limits, NaN, Infinity, booleans as
 integers, or a value above these hard caps. Invalid values return
 `INVALID_REQUEST` before scan logic is invoked; values are not silently
 clamped.
+
+Caller collections are bounded before item validation: `dwi_scan_system.roots`
+allows at most 32 roots and `dwi_create_cleanup_review.finding_ids` allows at
+most 256 IDs. Over-limit collections return `RESOURCE_LIMIT`; malformed item
+types return `INVALID_REQUEST`. There is no silent truncation.
 
 ## Trust boundary
 
@@ -63,7 +73,7 @@ Read-only tools:
 
 - `dwi_scan_system` and `dwi_scan_root` — engine scan and opaque scan handle.
 - `dwi_get_scan_summary` — bounded scan summary.
-- `dwi_list_findings` — engine findings and informational finding IDs.
+- `dwi_list_findings` — paginated engine findings and informational finding IDs.
 - `dwi_get_finding` — one finding read model.
 - `dwi_explain_finding` — deterministic evidence, safety decision, and rule trace.
 
@@ -86,6 +96,13 @@ There is deliberately no MCP confirmation tool. The trusted CLI/Desktop
 boundary must call the internal `McpService.confirm_from_human_channel` method
 with the server-issued human-channel token. An agent-supplied phrase such as
 `yes` or `CONFIRM` cannot create `HumanConfirmation`.
+
+Potentially large read lists use a maximum page size of 100 and a default page
+size of 50. `dwi_list_findings`, `dwi_get_scan_summary` root observations,
+`dwi_get_cleanup_review` plan items, `dwi_get_execution_status` item results,
+and `dwi_get_recovery_status` accept a server-issued read-only cursor. Cursors
+are bound to the current server-owned handle and result set; they carry no
+mutation authority and stale/forged cursors fail closed.
 
 ## Execution and recovery
 
