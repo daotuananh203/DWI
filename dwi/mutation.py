@@ -20,6 +20,7 @@ import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Callable
 
 from .cleanup import (
@@ -63,6 +64,50 @@ class JournalError(RuntimeError):
 
 class JournalCorruptionError(JournalError):
     """The journal contains an incomplete, malformed, or tampered record."""
+
+
+class ClaimRecoveryState(str, Enum):
+    RECONCILED_FAILED = "reconciled_failed"
+    REQUIRES_RECONCILIATION = "requires_reconciliation"
+
+
+@dataclass(frozen=True)
+class AuthorizationClaim:
+    """Durable claim data sufficient for conservative crash reconciliation."""
+
+    claim_path: str
+    plan_id: str
+    plan_item_id: str
+    validation_identity: str
+    authorization_identity: str
+    original_path: str
+    quarantine_path: str
+    filesystem_identity: FilesystemIdentity
+    recovery_id: str
+    timestamp: str
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(value, str) and value.strip() for value in (
+            self.claim_path, self.plan_id, self.plan_item_id,
+            self.validation_identity, self.authorization_identity,
+            self.recovery_id, self.timestamp,
+        )):
+            raise ValueError("authorization claim identifiers must not be empty")
+        if _canonical_absolute_path(self.claim_path) is None:
+            raise ValueError("authorization claim path must be absolute and normalized")
+        if _canonical_absolute_path(self.original_path) is None:
+            raise ValueError("authorization claim original path must be absolute and normalized")
+        if _canonical_absolute_path(self.quarantine_path) is None:
+            raise ValueError("authorization claim quarantine path must be absolute and normalized")
+
+
+@dataclass(frozen=True)
+class ClaimRecovery:
+    claim_path: str
+    plan_id: str
+    plan_item_id: str
+    state: ClaimRecoveryState
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -603,6 +648,61 @@ class AuditJournal:
             raise JournalError("authorization claim path escaped the mutation root")
         return path
 
+    def read_claims(self) -> tuple[AuthorizationClaim, ...]:
+        """Read bounded claim files without following links or external paths."""
+
+        self._check_path()
+        parent = os.path.dirname(self.path)
+        claims: list[AuthorizationClaim] = []
+        try:
+            with os.scandir(parent) as iterator:
+                entries = sorted(list(iterator), key=lambda entry: (entry.name.casefold(), entry.name))
+        except OSError as error:
+            raise JournalError("authorization claims could not be enumerated") from error
+        for directory_entry in entries:
+            name = directory_entry.name
+            if not (name.startswith(_CLAIM_FILE_PREFIX) and name.endswith(_CLAIM_FILE_SUFFIX)):
+                continue
+            claim_path = _canonical_absolute_path(directory_entry.path)
+            if claim_path is None or not _path_is_within(claim_path, self.disposable_path):
+                raise JournalCorruptionError("authorization claim escaped the mutation root")
+            try:
+                metadata = os.lstat(claim_path)
+            except OSError as error:
+                raise JournalError("authorization claim could not be observed") from error
+            if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+                raise JournalCorruptionError("authorization claim is linked, reparse-backed, or not a file")
+            try:
+                with open(claim_path, "r", encoding="utf-8", newline="") as stream:
+                    payload = json.load(stream)
+                if not isinstance(payload, dict) or payload.get("schema") != _JOURNAL_SCHEMA:
+                    raise ValueError("unsupported claim schema")
+                identity_payload = payload["filesystem_identity"]
+                expected_name = f"{_CLAIM_FILE_PREFIX}{_digest((payload['plan_id'], payload['plan_item_id']))}{_CLAIM_FILE_SUFFIX}"
+                if name != expected_name:
+                    raise ValueError("claim filename does not bind to its plan item")
+                identity = FilesystemIdentity(
+                    identity_payload["device"], identity_payload["inode"],
+                    NodeKind(identity_payload["object_type"]), identity_payload["is_reparse"],
+                    identity_payload.get("authoritative_path"),
+                )
+                claim = AuthorizationClaim(
+                    claim_path,
+                    payload["plan_id"],
+                    payload["plan_item_id"],
+                    payload["validation_identity"],
+                    payload["authorization_identity"],
+                    payload["original_path"],
+                    payload["quarantine_path"],
+                    identity,
+                    payload["recovery_id"],
+                    payload["timestamp"],
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise JournalCorruptionError("authorization claim is malformed") from error
+            claims.append(claim)
+        return tuple(claims)
+
     def read_entries(self) -> tuple[JournalEntry, ...]:
         self._check_path()
         if not _lexists(self.path):
@@ -707,6 +807,7 @@ class RestoreResult:
 class ReconciliationResult:
     entries: tuple[JournalEntry, ...]
     failures: tuple[str, ...]
+    claim_recoveries: tuple[ClaimRecovery, ...] = ()
 
 
 def _make_entry(
@@ -748,6 +849,8 @@ def _claim_authorization_item(
     item: object,
     authorization: ExecutionAuthorization,
     *,
+    validation_identity: str,
+    quarantine_path: str,
     timestamp: str,
 ) -> tuple[bool, str | None]:
     """Atomically claim one item before emitting mutation lifecycle records."""
@@ -762,11 +865,24 @@ def _claim_authorization_item(
         if not authorization._consume_item(plan.plan_id, plan_item_id):
             return False, "execution authorization item is stale, consumed, or replayed"
         claim_path = journal.claim_file_path(plan.plan_id.value, plan_item_id.value)
+        snapshot = item.snapshot
+        identity = snapshot.filesystem_identity
         payload = _canonical_json({
             "schema": _JOURNAL_SCHEMA,
             "plan_id": plan.plan_id.value,
             "plan_item_id": plan_item_id.value,
+            "validation_identity": validation_identity,
             "authorization_identity": authorization.authorization_token,
+            "original_path": snapshot.path,
+            "quarantine_path": quarantine_path,
+            "filesystem_identity": {
+                "device": identity.device,
+                "inode": identity.inode,
+                "object_type": identity.object_type.value,
+                "is_reparse": identity.is_reparse,
+                "authoritative_path": identity.authoritative_path,
+            },
+            "recovery_id": f"recovery-{_digest((plan.plan_id, plan_item_id))[:32]}",
             "timestamp": timestamp,
         }).encode("utf-8")
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -969,6 +1085,8 @@ def quarantine_plan(
                 plan,
                 item,
                 authorization,
+                validation_identity=validation.validation_token,
+                quarantine_path=quarantine_path,
                 timestamp=clock(),
             )
             if not claimed:
@@ -1103,6 +1221,65 @@ def reconcile_pending_operations(
     _require_mutation_roots(disposable_root, quarantine_root)
     _require_bound_journal(journal, disposable_root)
     entries = list(journal.read_entries())
+    claims = journal.read_claims()
+    journal_claim_keys = {
+        (entry.plan_id, entry.plan_item_id)
+        for entry in entries
+        if entry.status is QuarantineState.AUTHORIZATION_CLAIMED
+    }
+    claim_recoveries: list[ClaimRecovery] = []
+    for claim in claims:
+        key = (claim.plan_id, claim.plan_item_id)
+        if key in journal_claim_keys:
+            continue
+        try:
+            claimed = _make_entry(
+                journal,
+                plan_id=claim.plan_id,
+                plan_item_id=claim.plan_item_id,
+                validation_identity=claim.validation_identity,
+                authorization_identity=claim.authorization_identity,
+                original_path=claim.original_path,
+                quarantine_path=claim.quarantine_path,
+                filesystem_identity=claim.filesystem_identity,
+                status=QuarantineState.AUTHORIZATION_CLAIMED,
+                recovery_id=claim.recovery_id,
+                timestamp=claim.timestamp,
+            )
+            journal.append(claimed)
+            entries.append(claimed)
+            journal_claim_keys.add(key)
+            recovered = _make_entry(
+                journal,
+                plan_id=claim.plan_id,
+                plan_item_id=claim.plan_item_id,
+                validation_identity=claim.validation_identity,
+                authorization_identity=claim.authorization_identity,
+                original_path=claim.original_path,
+                quarantine_path=claim.quarantine_path,
+                filesystem_identity=claim.filesystem_identity,
+                status=QuarantineState.FAILED,
+                recovery_id=claim.recovery_id,
+                timestamp=clock(),
+                failure_reason="orphan authorization claim reconciled; mutation did not begin",
+            )
+            journal.append(recovered)
+            entries.append(recovered)
+            claim_recoveries.append(ClaimRecovery(
+                claim.claim_path,
+                claim.plan_id,
+                claim.plan_item_id,
+                ClaimRecoveryState.RECONCILED_FAILED,
+                "orphan authorization claim was journaled as claimed and failed without mutation",
+            ))
+        except (JournalError, MutationRefused, OSError) as error:
+            claim_recoveries.append(ClaimRecovery(
+                claim.claim_path,
+                claim.plan_id,
+                claim.plan_item_id,
+                ClaimRecoveryState.REQUIRES_RECONCILIATION,
+                f"orphan authorization claim could not be reconciled: {error}",
+            ))
     latest: dict[str, JournalEntry] = {}
     for entry in entries:
         latest[entry.recovery_id] = entry
@@ -1179,7 +1356,7 @@ def reconcile_pending_operations(
                 failures.append(f"{recovery_id}: recoverable state could not be journaled: {error}")
         except (MutationRefused, JournalError, OSError) as error:
             failures.append(f"{recovery_id}: {error}")
-    return ReconciliationResult(tuple(entries), tuple(failures))
+    return ReconciliationResult(tuple(entries), tuple(failures), tuple(claim_recoveries))
 
 
 def restore_recovery(

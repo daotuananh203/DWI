@@ -131,10 +131,21 @@ protected-root policy.
 `PLANNED` or `QUARANTINING` record is written. In-process claims are one-shot;
 the local filesystem claim file prevents a second process from claiming the
 same plan item. A claimed-but-not-started operation is reconciled explicitly;
-rejected replay does not append a misleading lifecycle failure.
-An orphan claim file may remain if the process stops after the atomic claim but
-before `AUTHORIZATION_CLAIMED` is journaled. This is deferred fail-closed
-availability debt and must be reconciled before public cleanup release.
+rejected replay does not append a misleading lifecycle failure. If a process
+stops after the atomic claim but before `AUTHORIZATION_CLAIMED` is journaled,
+restart reconciliation validates the complete claim payload, appends the
+claimed and failed records without moving data, and retains the claim file as
+a replay lock. Malformed or unjournalable claims remain blocked with an
+auditable reconciliation-required state; no automatic retry is permitted.
+
+38. The internal application service requires an exact immutable review and
+typed `HumanConfirmation` before it requests fresh engine revalidation. Fresh
+state must be an opaque `TrustedSnapshotSet` bound to the exact plan digest
+and item IDs, evaluation identity, rule-engine version, scan provenance,
+snapshot digest, and creation time; a caller mapping, replayed state, or hand-
+constructed set cannot qualify. Confirmation does not create policy,
+validation, or authorization. Changed, stale, partial, failed, or conflicting
+evidence after confirmation blocks execution.
 
 ## Future executor invariants
 

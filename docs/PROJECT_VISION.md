@@ -64,9 +64,9 @@ The MVP is deliberately narrow:
 The v0.3 scope remains offline-first and bounded. Its mutation capability is an
 internal engine path for explicitly marked disposable test roots or an
 approved-local-root gate: reversible quarantine/restore plus a
-tamper-detectable append-only journal. User-workspace cleanup execution, public
-Trash/Quarantine, Desktop, and MCP are roadmap milestones, not current runtime
-capabilities.
+tamper-detectable append-only journal. Public user-workspace cleanup execution,
+public Trash/Quarantine, Desktop, and MCP are roadmap milestones. The internal
+application service is not a public runtime interface.
 
 ## Release and bilingual strategy
 

@@ -30,9 +30,11 @@ contracts are implemented. The current internal milestone also contains
 isolated, reversible Quarantine/Journal/Undo primitives guarded to explicitly
 marked disposable directories under the operating-system temporary directory,
 plus a separate engine-issued approved-local-root gate for bounded Windows
-validation.
-They are test and engine-internal capabilities only: no user-workspace cleanup,
-permanent deletion, public execution interface, LLM, MCP, or UI is implemented.
+validation. An internal, presentation-neutral application service now
+orchestrates exact review, human confirmation, fresh revalidation, and
+per-item quarantine without accepting raw paths. These remain engine-internal
+capabilities: no public execution interface, permanent deletion, LLM, MCP, or
+UI cleanup path is implemented.
 
 Run a bounded report from one explicit workspace root:
 
@@ -83,11 +85,12 @@ Artifact names never map directly to risk labels. A low-risk label is available 
 The current bounded implementation boundary and exactly one next task are recorded in [TASKS.md](TASKS.md).
 
 The v0.3 contract layer defines immutable engine-generated cleanup plans,
-explicit trusted scan/root bindings, immediate revalidation, and separate
-engine-provenance-backed execution authorization. A `CleanupPlan` is a proposal,
-not permission to mutate data. The isolated mutation primitive accepts only
-that exact plan/validation/authorization chain and records reversible moves in
-an append-only journal; it is not a general cleanup executor.
+explicit trusted scan/root bindings, review sessions, typed human confirmation,
+immediate revalidation, and separate engine-provenance-backed execution
+authorization. A `CleanupPlan` is a proposal, not permission to mutate data.
+The internal application service accepts only that exact review/confirmation/
+validation/authorization chain and records reversible per-item moves in an
+append-only journal; it is not a public cleanup executor.
 The mutation functions are intentionally kept in the internal `dwi.mutation`
 module and are not exported as convenient top-level package APIs. In addition
 to the marked disposable test-root capability, the internal Windows gate can

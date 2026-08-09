@@ -47,16 +47,18 @@ service work, or network discovery by default.
   Windows root capability derived from the exact authorized plan.
 - Journal chain integrity with explicit post-rename recovery states and
   conservative restart reconciliation.
+- Internal presentation-neutral human-confirmed Cleanup Application Service
+  with exact review binding, post-confirmation revalidation, per-item results,
+  and conservative orphan-claim recovery.
 - No public cleanup interface, permanent deletion, Windows Recycle Bin
   integration, or arbitrary user-workspace path API.
 
 This remains an internal milestone; it is not a public release.
 
 `SAFE` and `ELIGIBLE_FOR_EXPLICIT_ACTION` do not independently authorize
-execution. The next bounded task is a direct Mutation Safety Gate audit and,
-only if approved, a human-confirmed cleanup application service above the
-internal executor. Permanent deletion remains out of scope until explicitly
-authorized.
+execution. The next bounded task is a direct end-to-end audit of the internal
+application flow before any cleanup interface is exposed. Permanent deletion
+remains out of scope until explicitly authorized.
 
 ## v0.4 — Desktop
 

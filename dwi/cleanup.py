@@ -25,8 +25,10 @@ from .domain import (
     ProtectionClass,
     ReachabilityState,
     RegenerabilityState,
+    RegenerationCost,
     RiskLabel,
     RuleTrace,
+    Provenance,
 )
 from .pipeline import CandidateEligibility, Finding
 from .size import SizeObservation
@@ -236,7 +238,9 @@ class FindingSnapshot:
     filesystem_identity: FilesystemIdentity
     risk_label: RiskLabel
     action_eligibility: ActionEligibility
+    provenance: Provenance
     regenerability: RegenerabilityState
+    regeneration_cost: RegenerationCost
     reachability: ReachabilityState
     activity: ActivityState
     protection: ProtectionClass
@@ -259,7 +263,9 @@ class FindingSnapshot:
             filesystem_identity=filesystem_identity,
             risk_label=finding.risk_label,
             action_eligibility=finding.action_eligibility,
+            provenance=finding.interpretation.provenance,
             regenerability=finding.interpretation.regenerability,
+            regeneration_cost=finding.interpretation.regeneration_cost,
             reachability=finding.interpretation.reachability,
             activity=finding.interpretation.activity,
             protection=finding.interpretation.protection,
@@ -499,7 +505,9 @@ def snapshot_from_finding(
         filesystem_identity=filesystem_identity,
         risk_label=finding.risk_label,
         action_eligibility=finding.action_eligibility,
+        provenance=finding.interpretation.provenance,
         regenerability=finding.interpretation.regenerability,
+        regeneration_cost=finding.interpretation.regeneration_cost,
         reachability=finding.interpretation.reachability,
         activity=finding.interpretation.activity,
         protection=finding.interpretation.protection,
@@ -606,7 +614,7 @@ def create_cleanup_plan(
 def _snapshot_differences(planned: FindingSnapshot, current: FindingSnapshot) -> tuple[str, ...]:
     differences: list[str] = []
     fields = (
-        "artifact", "risk_label", "action_eligibility", "regenerability", "reachability",
+        "artifact", "risk_label", "action_eligibility", "provenance", "regenerability", "regeneration_cost", "reachability",
         "activity", "protection", "evidence", "rule_trace", "size", "filesystem_identity",
     )
     if _path_key(planned.path) != _path_key(current.path):

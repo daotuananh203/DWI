@@ -10,9 +10,9 @@ interfaces over the same core. They must never create an alternate safety path.
 
 ## Shared product pipeline
 
-The diagram includes future public cleanup stages. v0.3 implements pure
-planning, validation, and authorization plus an isolated disposable-root
-mutation primitive; no user-workspace cleanup stage is exposed.
+The diagram includes future public cleanup stages. v0.3 also implements an
+internal presentation-neutral application service, but no public cleanup
+interface or user-workspace cleanup stage is exposed.
 
 ```text
 Filesystem observations
@@ -35,10 +35,13 @@ RiskLabel + ActionEligibility + RuleTrace
         +--> ReclaimPriority (independent value calculation)
         |
         v
-CleanupPlan -> PlanValidation -> ExecutionAuthorization
+CleanupPlan -> Review -> HumanConfirmation -> PlanValidation
         |
         v
-CleanupExecutor -> Trash/Quarantine -> Journal/Undo
+ExecutionAuthorization -> Internal Application Service
+        |
+        v
+Quarantine -> Journal/Undo
         |
         +--> CLI / Desktop / MCP adapters
 ```
@@ -75,6 +78,7 @@ system; an unknown basename returns no analysis result.
 - **Execution authorization:** pure v0.3 logic issues metadata-only authorization from an internal engine proof bound to the exact plan and validation state; it is not implied by `SAFE`, `ELIGIBLE_FOR_EXPLICIT_ACTION`, copied tokens, or public validation fields.
 - **Mutation Safety Gate:** accepts only the exact authorized plan, its valid immediate validation, a private unconsumed plan-item authorization, and the plan's engine-approved local root. It resolves lexical paths through an authoritative Windows final-path handle API after ordinary ancestry checks, rejects filesystem roots, network/UNC/mapped/unknown volumes, system/protected roots, linked/reparse paths, and root escapes, and compares both path identities at execution time.
 - **Isolated mutation primitive:** accepts only the exact authorized plan and engine-issued disposable or approved-local-root/quarantine/journal capabilities; it atomically claims each plan item before writing lifecycle records, rechecks identity/type/reparse/root/evidence/policy state immediately, and uses only same-filesystem non-overwriting Windows rename.
+- **Cleanup application service:** accepts one engine-generated cleanup session, exact typed human confirmation, and an internal engine revalidator capability. The revalidator must supply a `TrustedSnapshotSet` for the exact plan, bound to fresh evaluation identity, rule-engine version, scan provenance, snapshot digest, and creation time; caller mappings or hand-built snapshots are rejected. After confirmation, the service performs fresh evidence/interpretation/policy validation, obtains one-shot engine authorization, delegates to the internal mutation primitive, and reports each item independently. It accepts no raw path and is not exported through CLI, Desktop, or MCP.
 - **Cleanup execution:** future public executor accepts only authorized engine plans, prefers Trash/Quarantine, and records an audit journal for Undo/recovery.
 
 The scanner adapts each dispatcher result through a single-candidate selection
@@ -126,11 +130,11 @@ The MVP targets Windows filesystem behavior. Junctions, reparse points, symlinks
 The current CLI is reporting-only. `scan-system` is read-only, offline-first,
 and network-deny-by-default; it performs no telemetry, HTTP, cloud, or API
 communication. `--allow-network` permits only explicitly requested bounded
-network-filesystem I/O after the same safety gate. It has no user-workspace
-cleanup execution, undo/trash, process-wide activity scan, cross-project
-reachability, or project-wide package-manager analysis. The v0.3 mutation
-primitive performs only reversible quarantine/restore moves after its hard
-disposable-test-root or approved-local-root gate; no public executor,
+network-filesystem I/O after the same safety gate. It has no public
+user-workspace cleanup interface, process-wide activity scan, cross-project
+reachability, or project-wide package-manager analysis. The internal v0.3
+application service delegates only reversible quarantine/restore moves after
+its hard disposable-test-root or approved-local-root gate; no public executor,
 permanent deletion, or Windows Recycle Bin integration is implemented.
 
 Python filesystem APIs cannot make a multi-operation path traversal perfectly
@@ -162,9 +166,11 @@ processes when the filesystem honors atomic exclusive creation. It does not
 make append ordering for unrelated items a distributed transaction; journal
 corruption or ambiguous writes still fail closed.
 An interruption after claim-file creation but before the
-`AUTHORIZATION_CLAIMED` journal append can leave an orphan claim file. That is
-deliberately fail-closed availability debt and requires explicit recovery
-reconciliation before public cleanup release.
+`AUTHORIZATION_CLAIMED` journal append can leave an orphan claim file. Bounded
+restart reconciliation validates the claim payload, journals it as
+`AUTHORIZATION_CLAIMED` followed by `FAILED` without moving data, and retains
+the claim file as a replay lock. Malformed or unjournalable claims remain
+blocked with an auditable reconciliation-required state.
 
 MCP cleanup operations must accept only engine-generated `plan_id` and
 plan-item identifiers. An operation such as `delete_file(path)` is prohibited.

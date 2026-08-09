@@ -11,7 +11,7 @@ quarantine/journal primitives.
 All current behavior is covered by synthetic/tempdir and mocked-boundary
 tests.
 
-There is still no user-workspace cleanup executor, UI, MCP adapter, LLM integration,
+There is still no public user-workspace cleanup executor, UI, MCP adapter, LLM integration,
 telemetry, cloud/API access, background service, or dynamic plugin system.
 System scanning remains bounded, read-only, offline-first, and developer-storage
 aware. Git remains structured protection/context only and is not a cleanup
@@ -29,24 +29,27 @@ engine-produced validation proof. Mutation additionally requires exact
 validated snapshots, a private one-shot authorization item, an approved local
 root, authoritative Windows final-path identity, and immediate
 identity/type/reparse/path revalidation. Authorization claims are established
-before mutation lifecycle records are written.
+before mutation lifecycle records are written. The internal presentation-neutral
+application service adds exact review, human confirmation, fresh revalidation,
+and per-item execution reporting without widening the public surface. Valid
+orphan claims are journaled as claimed and failed without mutation during
+restart reconciliation; malformed or unjournalable claims remain blocked and
+require review. Claim files are retained as replay locks.
 
-Deferred technical debt: a crash after the local authorization claim file is
-created but before the `AUTHORIZATION_CLAIMED` journal record is appended may
-leave an orphan claim file. This is fail-closed availability debt; recovery
-and reconciliation must be specified before any public cleanup release.
+Orphan claim files after a crash before `AUTHORIZATION_CLAIMED` are detected
+during restart reconciliation. Valid claims are journaled as claimed and
+failed without mutation; malformed or unjournalable claims remain blocked.
 
 ## Next task — exactly one
 
-- [ ] Perform direct Mutation Safety Gate audit and, only if approved, implement human-confirmed cleanup application service above the internal executor.
+- [ ] Directly audit the complete end-to-end cleanup application flow before exposing any cleanup interface.
 
 ### Acceptance criteria
 
-- Review the approved-local-root policy, one-shot authorization consumption,
-  immediate identity/reparse/root revalidation, same-filesystem
-  non-overwriting rename, chained journal integrity, post-rename
-  journal-failure states, crash-window reconciliation, partial failure, and
-  idempotent Undo behavior on real Windows semantics.
+- Audit the complete `Finding/SystemScan -> CleanupPlan -> Review ->
+  HumanConfirmation -> fresh PlanValidation -> ExecutionAuthorization ->
+  Quarantine -> Journal -> Undo` flow, including exact binding and failure
+  semantics.
 - Do not expose mutation through the public CLI, Desktop, MCP, or arbitrary raw
   paths; preserve the `CleanupPlan` -> `PlanValidation` ->
   `ExecutionAuthorization` chain.

@@ -98,6 +98,31 @@ consumption state, so a consumed item cannot be replayed; a partial multi-item
 operation leaves only unconsumed items attributable to the original
 authorization. Issuing authorization performs no mutation.
 
+### CleanupReview, HumanConfirmation, and CleanupSession
+
+`CleanupReview` is an immutable review snapshot derived from exactly one
+`CleanupPlan`; it binds the plan digest and complete plan-item identifier set.
+`HumanConfirmation` is a typed, immutable acknowledgement bound to the exact
+session, review digest, plan digest, item set, phrase, and confirmation time.
+A generic boolean or affirmative string without those bindings is not
+confirmation. Neither review nor confirmation creates a `RiskLabel`,
+`ActionEligibility`, `PlanValidation`, or `ExecutionAuthorization`.
+
+`CleanupSession` owns the review boundary. The internal application service
+accepts only an engine-bound session and confirmation plus an opaque
+engine-issued revalidator capability. That capability must return a
+`TrustedSnapshotSet` bound to the exact plan digest and item IDs, fresh
+evaluation identity, rule-engine version, scan provenance, snapshot digest, and
+creation time. A caller-supplied snapshot mapping or hand-constructed set is
+not fresh state. The service performs restart reconciliation, then fresh
+evidence/interpretation/policy validation after confirmation, then engine
+authorization, and finally delegates each item to reversible quarantine.
+`CleanupApplicationResult` keeps per-item outcomes explicit and declares the
+operation non-transactional. The capability is an in-process trust boundary,
+not a cryptographic process-isolation boundary; its constructors and factories
+remain internal and are not exposed through the top-level package or future
+presentation adapters.
+
 ### CleanupExecutor, Trash/Quarantine, and Journal/Undo
 
 The executor performs only an authorized plan. Initial cleanup releases must
@@ -130,8 +155,10 @@ deletion implementation.
 Before those lifecycle records, the mutation boundary creates an atomic local
 claim file for the exact plan item and records `AUTHORIZATION_CLAIMED`. A
 second in-process or local-process attempt cannot claim the same item. If a
-process stops after claiming but before mutation, restart reconciliation records
-an explicit failed-not-started state without moving the target.
+process stops after claiming but before mutation, restart reconciliation reads
+the complete claim payload, records an explicit claimed-then-failed state
+without moving the target, and retains the claim file as a replay lock.
+Malformed claims remain blocked for manual recovery; no automatic retry occurs.
 
 The mutation functions, disposable-root capabilities, and journal types are
 kept in the internal `dwi.mutation` module rather than widened into convenient

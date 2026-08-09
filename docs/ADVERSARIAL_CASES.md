@@ -76,6 +76,13 @@ These cases define the failure-oriented design and future test fixtures. They ar
   modifies validation fields, or presents validation for a different plan.
 - A future quarantine destination is occupied, unavailable, or cannot be
   journaled after a crash.
+- A human confirmation is missing, forged, stale, bound to another plan, or
+  based on a modified review snapshot.
+- Filesystem identity, policy posture, scan completeness, or evidence changes
+  after confirmation and before fresh validation.
+- An orphan authorization claim is discovered after restart; it must be
+  journaled as claimed-then-failed or remain reconciliation-required without
+  mutation or automatic retry.
 - A quarantine rename commits but its final `QUARANTINED` journal append fails.
 - A restore rename commits but its final `RESTORED` journal append fails.
 - A journal record is edited, deleted, reordered, duplicated, truncated, or
@@ -93,6 +100,9 @@ out-of-plan targets. It never accepts a user-workspace or arbitrary raw-path
 mutation target. Authorization claims occur before `PLANNED`; a rejected
 replay produces no extra mutation lifecycle record, and restart reconciliation
 handles a claimed-but-not-started state.
+
+The internal application service adds an exact review/confirmation gate and
+reports multi-item outcomes independently; it never implies transactionality.
 
 ## Required behavior
 

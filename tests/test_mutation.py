@@ -51,6 +51,7 @@ from dwi.cleanup import _digest
 from dwi.mutation import (
     AuditJournal,
     ApprovedMutationRoot,
+    ClaimRecoveryState,
     JournalCorruptionError,
     JournalEntry,
     JournalError,
@@ -66,6 +67,7 @@ from dwi.mutation import (
     create_audit_journal,
     create_disposable_root,
     create_quarantine_root,
+    _claim_authorization_item,
     quarantine_plan,
     reconcile_pending_operations,
     restore_recovery,
@@ -266,6 +268,43 @@ class MutationPrimitiveTests(unittest.TestCase):
         self.assertEqual(result.entries[-1].status, QuarantineState.FAILED)
         self.assertIn("claimed", result.entries[-1].failure_reason)
         self.assertTrue(Path(item.snapshot.path).exists())
+
+    def test_restart_reconciles_orphan_claim_file_without_mutation_or_replay(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        item = plan.items[0]
+        recovery_id = self._recovery_id(plan, item)
+        destination = os.path.join(self.quarantine_root.path, recovery_id)
+        claimed, reason = _claim_authorization_item(
+            self.journal,
+            plan,
+            item,
+            authorization,
+            validation_identity=validation.validation_token,
+            quarantine_path=destination,
+            timestamp=self.clock(),
+        )
+        self.assertTrue(claimed, reason)
+        self.assertTrue(Path(item.snapshot.path).exists())
+        reconciled = reconcile_pending_operations(
+            self.journal,
+            self.disposable,
+            self.quarantine_root,
+            clock=self.clock,
+        )
+        self.assertEqual(reconciled.claim_recoveries[0].state, ClaimRecoveryState.RECONCILED_FAILED)
+        self.assertEqual(
+            [entry.status for entry in self.journal.read_entries()],
+            [QuarantineState.AUTHORIZATION_CLAIMED, QuarantineState.FAILED],
+        )
+        self.assertTrue(Path(item.snapshot.path).exists())
+        repeated = reconcile_pending_operations(
+            self.journal,
+            self.disposable,
+            self.quarantine_root,
+            clock=self.clock,
+        )
+        self.assertEqual(repeated.claim_recoveries, ())
 
     def test_approved_local_root_is_engine_bound(self) -> None:
         plan = self._plan()
