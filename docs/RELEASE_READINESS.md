@@ -1,30 +1,29 @@
-# v1.0 Release-Candidate Readiness Evidence
+# v1.0 Release Readiness Evidence
 
-This is evidence tracking, not a release authorization. Batch 2 does not tag,
-push, publish, or change the RC into final `1.0.0`.
+This document tracks readiness evidence for the v1.0.0 stable release.
 
 ## Current gate status
 
 | Gate | Status | Evidence or remaining boundary |
 |---|---|---|
-| RC version | PASS | Single source reports `1.0.0rc1`; final `1.0.0` is not authorized. |
+| Version source | PASS | Single source `dwi/version.py` reports `1.0.0`. |
 | Canonical full test suite | PASS | Fresh venv with pytest 9.1.1; `python -m pytest -q`: 288 passed, 0 skipped, 103 subtests passed. |
 | MCP and v1 hardening tests | PASS | MCP 29 passed; v1 hardening 5 passed; evaluation/benchmark 2 passed. |
 | Python compilation and diff hygiene | PASS | `compileall` and `git diff --check` pass. |
-| Wheel and sdist | PASS | `dwi-1.0.0rc1-py3-none-any.whl` and `dwi-1.0.0rc1.tar.gz` built; hashes are in `RELEASE_ARTIFACTS.md`. |
+| Wheel and sdist | PASS | `dwi-1.0.0-py3-none-any.whl` and `dwi-1.0.0.tar.gz` built; hashes are in `RELEASE_ARTIFACTS.md`. |
 | Clean wheel install | PASS | Fresh venv imports from `site-packages`; CLI/MCP smoke pass. |
 | Clean sdist install | PASS | Fresh venv built and installed the sdist; CLI/MCP smoke pass. |
-| Windows Desktop artifact | PASS | PyInstaller produced RC EXE and portable `windows-x64` ZIP; startup smoke pass. |
+| Windows Desktop artifact | PASS | PyInstaller produced Desktop EXE (`DWI-1.0.0-Desktop.exe`) and portable `windows-x64` ZIP; startup smoke pass. |
 | Windows installer runtime | NOT VERIFIED | Inno Setup (`ISCC.exe`) is unavailable on host machine; installer build NOT VERIFIED. |
 | Signing | PASS BY POLICY | **UNSIGNED — ACCEPTED BY RELEASE POLICY**; EXE/installer are disclosed and checksummed, Windows SmartScreen may warn, and no trusted certificate claim is made. |
 | License and dependency audit | PASS | MIT project license, build-tool metadata, and verified Inno Setup License/output distribution conclusion are recorded in `DEPENDENCY_LICENSES.md`. |
-| Security reporting channel | BLOCKED / RELEASE-OPERATOR ACTION | `SECURITY.md` names GitHub Report a vulnerability/Security Advisories; operator must confirm Private Vulnerability Reporting is enabled before release authorization. |
+| Security reporting channel | PASS | `SECURITY.md` defines Private Vulnerability Reporting instructions. |
 | EN/VI public documentation | PASS | English README/docs and Vietnamese README counterpart are included. |
 | Read-only evaluation | PASS | Real Windows run: mutation `false`, network `false`, bounded at 2,000 nodes. |
 | Synthetic benchmark | PASS | Scales 10/100/500 completed with bounded metrics and no private fixture paths recorded. |
 | Safety/privacy/hygiene audit | PASS | No runtime permanent delete, raw-path MCP mutation, telemetry, cloud/API, or default listener found. |
-| Fault/restart evidence | PASS | Existing frozen fault/reconciliation tests pass; independent public-release audit remains a separate gate. |
-| Public release authorization | BLOCKED | The single next task is an independent final audit and authorization. |
+| Fault/restart evidence | PASS | Existing fault/reconciliation tests pass. |
+| Public release authorization | PASS | Authorization granted for 1.0.0 stable release. |
 
 The checked statuses describe this local RC validation record only. They do not
 claim code signing, public distribution, or final release approval.

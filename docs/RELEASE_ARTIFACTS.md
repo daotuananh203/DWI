@@ -1,16 +1,16 @@
-# DWI 1.0.0rc1 Artifact Record
+# DWI 1.0.0 Artifact Record
 
-These checksums identify the local Windows RC artifacts built and smoke-tested
-for the Batch 2 validation record. The binaries remain ignored from source
-control; this document does not publish or authorize a release.
+These checksums identify the local Windows 1.0.0 stable artifacts built and smoke-tested
+for the release validation record. The binaries remain ignored from source
+control; this document records their verified hashes and sizes.
 
 | Artifact | Size (bytes) | SHA-256 |
 |---|---:|---|
-| `dwi-1.0.0rc1-py3-none-any.whl` | 145,136 | `CFB4900C0D01091F71D925DFA385E81004A9E813E840E3E13527DA87E21C6143` |
-| `dwi-1.0.0rc1.tar.gz` | 124,080 | `8DB56E0F9856209C0C63BA70B5A6BEFCC2B63800E8760D734994379AD7AF9496` |
-| `DWI-1.0.0rc1-Desktop.exe` | 11,717,550 | `0087B0D7EE60DC352A23829032190A94230E2F0FBB839225E835F17F1083F006` |
-| `DWI-1.0.0rc1-windows-x64.zip` | 11,458,905 | `8EC30F462C6F3B7F71096F003AB0FF9A9D2E86885466878CCCCAACDD683D8E5C` |
-| `DWI-1.0.0rc1-Setup.exe` | N/A | `NOT VERIFIED — ISCC unavailable` |
+| `dwi-1.0.0-py3-none-any.whl` | 145,051 | `B50004E1F6F3581CDCEC6B410FBF7962E1377626668522F36EE93E2850232EF2` |
+| `dwi-1.0.0.tar.gz` | 124,141 | `2B866A724248402EC02DC89BA6E45D79EF1E517687D8447721BE69D4D4CB3276` |
+| `DWI-1.0.0-Desktop.exe` | 11,716,711 | `F1795B1AA554B69F9230A37C23D6FB758B918E4141AF21F41A6562BC1519BCE9` |
+| `DWI-1.0.0-windows-x64.zip` | 11,457,685 | `32107EB2AF574FB562CA8DCBF1B9A109BA790B6B143D6774EFCCEB030244AF91` |
+| `DWI-1.0.0-Setup.exe` | N/A | `NOT VERIFIED — ISCC unavailable` |
 
 Build tools used in the record were `build 1.5.0`, `setuptools 84.0.0`,
 `PyInstaller 6.22.0`, and Inno Setup 7.0.2. The Desktop executable and
