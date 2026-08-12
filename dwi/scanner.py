@@ -20,6 +20,8 @@ _SUPPORTED_NAMES = frozenset({
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv", "venv",
     "node_modules", "dist", "build", ".next",
 })
+_DISPOSABLE_MARKER = ".dwi-disposable-root"
+_DISPOSABLE_MARKER_CONTENT = "DWI-DISPOSABLE-ROOT-v0.3\n"
 
 
 class WorkspaceScanError(ValueError):
@@ -113,6 +115,22 @@ def _within_root(root: Path, path: Path) -> bool:
         return False
 
 
+def _has_disposable_root_marker(root: Path) -> bool:
+    """Verify the exact ordinary-file marker used by disposable QA roots."""
+
+    try:
+        with os.scandir(root) as entries:
+            marker_entry = next((entry for entry in entries if entry.name == _DISPOSABLE_MARKER), None)
+        if marker_entry is None:
+            return False
+        metadata = marker_entry.stat(follow_symlinks=False)
+        if not stat.S_ISREG(metadata.st_mode) or marker_entry.is_symlink() or _is_reparse(metadata):
+            return False
+        return Path(marker_entry.path).read_text(encoding="utf-8") == _DISPOSABLE_MARKER_CONTENT
+    except (OSError, UnicodeError):
+        return False
+
+
 def scan_workspace(
     root: str | os.PathLike[str],
     *,
@@ -134,6 +152,7 @@ def scan_workspace(
     ambiguous: list[str] = []
     git_observations: list[GitContextObservation] = []
     active_budget = budget or ScanBudget(limits=limits or ScanLimits(), cancellation=cancellation)
+    disposable_root = _has_disposable_root_marker(root_path)
     seen: set[tuple[int, int]] = set()
     stack = [root_path]
     while stack:
@@ -218,7 +237,7 @@ def scan_workspace(
                     ambiguous.append(str(child))
                     continue
                 if name in _SUPPORTED_NAMES and stat.S_ISDIR(child_metadata.st_mode):
-                    result = analyze_candidate(child)
+                    result = analyze_candidate(child, disposable_root=disposable_root)
                     if result is not None:
                         findings.append(evaluate_analysis(result, size=collect_size(child, budget=active_budget)))
                     continue

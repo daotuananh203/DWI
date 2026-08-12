@@ -71,6 +71,7 @@ class _ExecutionState:
     status: str = McpHandleState.READY_FOR_EXECUTION.value
     error: str | None = None
     recovery_handles: list[str] = field(default_factory=list)
+    capacity_reservation: object | None = None
 
 
 @dataclass
@@ -430,10 +431,20 @@ class McpService:
                 if self._store.state(review.execution_handle, McpHandleType.EXECUTION, allow_consumed=True) is not McpHandleState.READY_FOR_EXECUTION:
                     raise McpServiceError(McpErrorCode.CONSUMED_HANDLE, "execution handle was already used")
                 return {"status": McpHandleState.READY_FOR_EXECUTION.value, "execution_handle": review.execution_handle, "review_handle": entry.handle}
-            execution = _ExecutionState(entry.handle, review)
-            handle = self._store.issue(McpHandleType.EXECUTION, execution, state=McpHandleState.READY_FOR_EXECUTION)
-            review.execution_handle = handle
-            return {"status": McpHandleState.READY_FOR_EXECUTION.value, "execution_handle": handle, "review_handle": entry.handle}
+            reservation = self._store.reserve(1 + len(review.plan.items))
+            try:
+                execution = _ExecutionState(entry.handle, review, capacity_reservation=reservation)
+                handle = self._store.issue(
+                    McpHandleType.EXECUTION,
+                    execution,
+                    state=McpHandleState.READY_FOR_EXECUTION,
+                    reservation=reservation,
+                )
+                review.execution_handle = handle
+                return {"status": McpHandleState.READY_FOR_EXECUTION.value, "execution_handle": handle, "review_handle": entry.handle}
+            except Exception:
+                reservation.release()
+                raise
 
     def _execution_entry(self, handle: object, *, allow_consumed: bool = False):
         return self._store.resolve(handle, McpHandleType.EXECUTION, allow_consumed=allow_consumed)
@@ -493,6 +504,8 @@ class McpService:
         execution: _ExecutionState = self._store.consume(handle, McpHandleType.EXECUTION)
         execution.status = McpHandleState.EXECUTING.value
         try:
+            if execution.capacity_reservation is not None:
+                execution.capacity_reservation.begin()
             runtime = self._runtime_factory()
             result = execute_cleanup_session(
                 execution.review.session,
@@ -506,13 +519,18 @@ class McpService:
                     execution.recovery_handles.append(self._store.issue(
                         McpHandleType.RECOVERY,
                         _RecoveryState(handle, runtime, item.recovery_id),
+                        reservation=execution.capacity_reservation,
                     ))
             execution.result = result
             execution.status = _result_status(result)
             terminal = McpHandleState.RECONCILIATION_REQUIRED if result.state is CleanupSessionState.RECONCILIATION_REQUIRED else McpHandleState.COMPLETE
             self._store.complete(handle, McpHandleType.EXECUTION, terminal)
+            if execution.capacity_reservation is not None:
+                execution.capacity_reservation.release()
             return self._safe_execution_result(handle, execution)
         except Exception as error:
+            if execution.capacity_reservation is not None:
+                execution.capacity_reservation.release()
             execution.error = "execution failed at the engine boundary"
             execution.status = McpErrorCode.EXECUTION_FAILED.value
             self._store.complete(handle, McpHandleType.EXECUTION, McpHandleState.FAILED)

@@ -31,3 +31,21 @@ Evaluation record template:
 | Performance | Wall clock and node/file counts |
 | Failures | Permission/partial/reparse observations |
 | Mutation | Must remain `false` |
+
+## Batch 2 RC validation record
+
+The RC validation run used the local Windows host with network scanning
+disabled and the hard limits below. Only aggregate results are recorded;
+private roots and findings are intentionally omitted.
+
+| Field | Result |
+|---|---|
+| Version | `1.0.0rc1` |
+| Python / platform | CPython 3.12.8 / Windows 10 |
+| Limits | 5 seconds, 2,000 nodes, 2,000 files |
+| Termination | `node_limit` with a partial bounded result |
+| Nodes / files observed | 2,000 / 819 |
+| Network allowed | `false` |
+| Mutation started | `false` |
+| Observation failures | 1; conservative partial result |
+| Root status | 12 skipped, 1 partial; no mutation path entered |

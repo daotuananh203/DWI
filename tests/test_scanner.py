@@ -76,6 +76,40 @@ class ScannerTests(unittest.TestCase):
             with self.assertRaises(WorkspaceScanError):
                 scan_workspace(Path(temporary_directory) / "missing")
 
+    def test_explicitly_marked_disposable_root_produces_executable_pytest_cache_finding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / ".dwi-disposable-root").write_text("DWI-DISPOSABLE-ROOT-v0.3\n", encoding="utf-8")
+            cache = root / ".pytest_cache"
+            cache.mkdir()
+            (cache / "CACHEDIR.TAG").write_text(_TAG, encoding="utf-8")
+            (cache / "README.md").write_text("This directory is used by pytest to store cache data.\n", encoding="utf-8")
+            (cache / "v").mkdir()
+
+            scan = scan_workspace(root)
+            self.assertEqual(len(scan.findings), 1)
+            finding = scan.findings[0]
+            self.assertEqual(finding.risk_label, RiskLabel.REGENERATABLE)
+            self.assertEqual(finding.action_eligibility.value, "eligible_for_explicit_action")
+            self.assertEqual(finding.interpretation.reachability.value, "confirmed_unreferenced")
+            self.assertEqual(finding.interpretation.activity.value, "inactive")
+            self.assertEqual(finding.interpretation.protection.value, "ordinary")
+            self.assertFalse(finding.evidence.has_uncertainty)
+            self.assertFalse(finding.evidence.has_conflicts)
+
+    def test_ambiguous_marked_root_variant_remains_review_required(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / ".dwi-disposable-root").write_text("DWI-DISPOSABLE-ROOT-v0.3\n", encoding="utf-8")
+            cache = root / ".pytest_cache"
+            cache.mkdir()
+            (cache / "CACHEDIR.TAG").write_text("not the standard signature\n", encoding="utf-8")
+            (cache / "v").mkdir()
+
+            finding = scan_workspace(root).findings[0]
+            self.assertEqual(finding.risk_label, RiskLabel.REVIEW_REQUIRED)
+            self.assertEqual(finding.action_eligibility.value, "requires_review")
+
     def test_repeated_scan_is_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

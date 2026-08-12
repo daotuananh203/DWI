@@ -231,6 +231,16 @@ recovery, journaling, race conditions, and failure handling.
 future executor must require an immutable engine-generated plan, immediate
 revalidation, and explicit `ExecutionAuthorization`.
 
+For the narrowly supported disposable scanner path, the root must contain one
+ordinary non-reparse file named `.dwi-disposable-root` whose exact content is
+`DWI-DISPOSABLE-ROOT-v0.3`. The pytest-cache detector accepts this marker only
+as an explicit bounded-scope contract: it emits high-confidence evidence for
+recreation availability, no retained consumer within the declared disposable
+fixture, inactive runtime use, and ordinary protection. A normal unmarked
+workspace, a malformed marker, an ambiguous cache layout, or any unknown
+observation remains `REVIEW_REQUIRED`; missing evidence is never converted into
+absence, inactivity, unreferenced state, or ordinary protection.
+
 ## v0.5 MCP boundary invariants
 
 41. MCP requests are untrusted. A request may contain only strict schema fields;
@@ -268,8 +278,8 @@ rejected before JSON/schema/engine work, drained without unbounded buffering,
 and does not turn a partial line into a valid request.
 
 48. All public scan limits use finite typed values and shared hard caps of 300
-seconds, 100,000 nodes, and 100,000 files. A zero budget means an immediate
-bounded stop; it never means unlimited work.
+seconds, 100,000 nodes, and 100,000 files. Caller-created zero or negative
+ budgets are rejected; no zero value means unlimited work.
 
 49. The developer machine evaluation command is read-only, network-deny by
 default, count/status-oriented, and does not create cleanup, quarantine,

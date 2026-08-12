@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import secrets
 from dataclasses import dataclass
 from typing import Sequence, TypeVar
 
@@ -10,6 +12,7 @@ from .models import McpErrorCode, McpServiceError
 
 
 T = TypeVar("T")
+_CURSOR_KEY = secrets.token_bytes(32)
 
 
 @dataclass(frozen=True)
@@ -22,7 +25,8 @@ class Page:
 
 
 def _fingerprint(key: str, total: int) -> str:
-    return hashlib.sha256(f"{key}\x00{total}".encode("utf-8")).hexdigest()[:24]
+    message = f"{key}\x00{total}".encode("utf-8")
+    return hmac.new(_CURSOR_KEY, message, hashlib.sha256).hexdigest()[:24]
 
 
 def page_items(

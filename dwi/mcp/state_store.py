@@ -23,6 +23,29 @@ class _HandleEntry:
     consumed: bool = False
 
 
+class HandleReservation:
+    """Pre-allocated live-handle capacity for one bounded operation."""
+
+    def __init__(self, store: "OpaqueHandleStore", count: int, expires_at: float) -> None:
+        self._store = store
+        self._remaining = count
+        self._expires_at = expires_at
+        self._active = True
+        self._in_flight = False
+
+    @property
+    def remaining(self) -> int:
+        return self._remaining
+
+    def release(self) -> None:
+        self._store._release_reservation(self)
+
+    def begin(self) -> None:
+        """Keep reserved capacity until the one-shot operation finishes."""
+
+        self._store._begin_reservation(self)
+
+
 @dataclass(frozen=True)
 class _StaleTombstone:
     handle_type: McpHandleType
@@ -62,6 +85,8 @@ class OpaqueHandleStore:
         self._lock = threading.RLock()
         self._entries: dict[str, _HandleEntry] = {}
         self._tombstones: OrderedDict[str, _StaleTombstone] = OrderedDict()
+        self._reserved_slots = 0
+        self._reservations: list[HandleReservation] = []
 
     @property
     def max_entries(self) -> int:
@@ -93,6 +118,9 @@ class OpaqueHandleStore:
 
     def _purge_expired_locked(self, now: float) -> None:
         self._purge_tombstones_locked(now)
+        for reservation in tuple(self._reservations):
+            if reservation._active and not reservation._in_flight and now >= reservation._expires_at:
+                self._release_reservation_locked(reservation)
         expired = [handle for handle, entry in self._entries.items() if now >= entry.expires_at]
         for handle in expired:
             entry = self._entries.pop(handle)
@@ -100,17 +128,66 @@ class OpaqueHandleStore:
             # retain the entry object in a tombstone or exception details.
             self._remember_stale_locked(entry, now)
 
+    def reserve(self, count: int) -> HandleReservation:
+        """Reserve live registry slots before an operation can mutate state."""
+
+        if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+            raise McpServiceError(McpErrorCode.INVALID_REQUEST, "handle reservation count must be a positive integer")
+        with self._lock:
+            now = self._clock()
+            self._purge_expired_locked(now)
+            if len(self._entries) + self._reserved_slots + count > self._max_entries:
+                raise McpServiceError(
+                    McpErrorCode.RESOURCE_LIMIT,
+                    "MCP handle capacity cannot reserve the required operation result state",
+                )
+            reservation = HandleReservation(self, count, now + self._ttl_seconds)
+            self._reserved_slots += count
+            self._reservations.append(reservation)
+            return reservation
+
+    def _release_reservation_locked(self, reservation: HandleReservation) -> None:
+        if reservation._store is not self or not reservation._active:
+            return
+        self._reserved_slots -= reservation._remaining
+        reservation._remaining = 0
+        reservation._active = False
+        if reservation in self._reservations:
+            self._reservations.remove(reservation)
+
+    def _release_reservation(self, reservation: HandleReservation) -> None:
+        with self._lock:
+            self._release_reservation_locked(reservation)
+
+    def _begin_reservation(self, reservation: HandleReservation) -> None:
+        with self._lock:
+            self._purge_expired_locked(self._clock())
+            if reservation._store is not self or not reservation._active:
+                raise McpServiceError(McpErrorCode.RESOURCE_LIMIT, "MCP handle reservation is no longer available")
+            reservation._in_flight = True
+
+    def _take_reservation_locked(self, reservation: HandleReservation | None) -> bool:
+        if reservation is None:
+            return False
+        if reservation._store is not self or not reservation._active or reservation._remaining <= 0:
+            raise McpServiceError(McpErrorCode.RESOURCE_LIMIT, "MCP handle reservation is no longer available")
+        reservation._remaining -= 1
+        self._reserved_slots -= 1
+        return True
+
     def issue(
         self,
         handle_type: McpHandleType,
         payload: object,
         *,
         state: McpHandleState = McpHandleState.ACTIVE,
+        reservation: HandleReservation | None = None,
     ) -> str:
         with self._lock:
             now = self._clock()
             self._purge_expired_locked(now)
-            if len(self._entries) >= self._max_entries:
+            reserved = self._take_reservation_locked(reservation)
+            if not reserved and len(self._entries) + self._reserved_slots >= self._max_entries:
                 raise McpServiceError(
                     McpErrorCode.RESOURCE_LIMIT,
                     "MCP handle capacity is exhausted; active authority was not evicted",

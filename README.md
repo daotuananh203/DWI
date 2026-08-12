@@ -1,168 +1,134 @@
 # Developer Workspace Intelligence (DWI)
 
-DWI is a developer-storage intelligence and safe-cleanup system that discovers
-development artifacts across an entire machine, explains provenance,
-regenerability, reachability, and risk using deterministic evidence, and exposes
-the same safety engine through Desktop, CLI, and MCP interfaces for humans and
-AI agents.
+DWI is a Windows-first developer-storage intelligence and safe-cleanup system.
+It discovers development artifacts, explains the evidence behind each finding,
+and provides reversible Quarantine + Journal + Undo workflows through one
+deterministic engine.
 
-Existing disk analyzers answer:
+This repository contains the `1.0.0rc1` release candidate. It is not the final
+`1.0.0` public release. Public release authorization remains a separate,
+independent audit step.
 
-> What is using disk space?
+[Đọc README tiếng Việt](README.vi.md)
 
-DWI is intended to answer:
+## What DWI provides
 
-> What storage may be reclaimed, what evidence supports that conclusion, and what could make reclaiming it unsafe?
+- Workspace Intelligence for Python, Node.js and approved developer-storage
+  artifacts.
+- System Intelligence with bounded traversal, partial-result reporting and
+  network-filesystem default deny.
+- A deterministic evidence → interpretation → Safety Policy pipeline.
+- Native Tkinter Desktop with English/Vietnamese resources.
+- CLI reporting and human-confirmed cleanup.
+- Local stdio MCP tools for untrusted AI-agent callers.
+- Reversible Quarantine + Journal + Undo. Permanent deletion is not provided.
 
-## North Star and current status
+The safety engine, not an AI model, decides `RiskLabel`, `ActionEligibility`,
+validation and authorization. AI may explain or request an engine decision; it
+must never manufacture a safety decision.
 
-The final product is a whole-system Developer Storage Intelligence & Safe
-Cleanup System. It will combine machine-wide discovery, deterministic safety
-analysis, cleanup planning, immediate revalidation, Trash/Quarantine,
-auditable journals, Undo/recovery, Desktop, CLI, and MCP interfaces over one
-shared engine.
+## Install the release candidate
 
-The typed domain model, detector-neutral evidence contracts, bounded artifact
-analyzers, explicit dispatcher, workspace scanner, structured Git context,
-bounded System Intelligence discovery, size accounting, standard-library
-CLI/report adapters, and v0.3 cleanup planning/validation/authorization
-contracts are implemented. The current internal milestone also contains
-isolated, reversible Quarantine/Journal/Undo primitives guarded to explicitly
-marked disposable directories under the operating-system temporary directory,
-plus a separate engine-issued approved-local-root gate for bounded Windows
-validation. An internal, presentation-neutral application service now
-orchestrates exact review, human confirmation, fresh revalidation, and
-per-item quarantine without accepting raw paths. An internal human-facing CLI
-adapter now presents that flow in one process; it is pre-public, does not
-serialize capabilities, and is not a raw-path mutation API. v0.4 Desktop now
-provides the same flow through a native Tkinter shell, controller/state model,
-background worker, EN/VI resources, findings explanations, and Recovery/Undo.
-v0.5 MCP is implemented as a local-only untrusted JSON-RPC adapter; permanent
-deletion and LLM decision-path integration remain absent.
+Validated Python package installation uses Python 3.11+ on Windows:
 
-Run a bounded report from one explicit workspace root:
+```powershell
+python -m pip install dwi-1.0.0rc1-py3-none-any.whl
+```
 
-```text
-python -m dwi scan PATH
-python -m dwi scan PATH --json
-python -m dwi scan-system --root PATH --allow-network
-python -m dwi scan-system --json
-python -m dwi cleanup PATH
-python -m dwi cleanup PATH --json --confirm-phrase "I reviewed this exact cleanup plan."
-python -m dwi desktop
-python -m dwi mcp
-python -m dwi evaluate-readonly --root PATH --max-seconds 10
+The wheel has no runtime dependencies beyond Python. A source distribution is
+also provided for environments that build Python packages locally. See
+[installation](docs/INSTALLATION.md) for wheel, sdist, portable Desktop and
+development-source instructions. A Windows installer is a separate artifact
+and has been installed and smoke-tested in a disposable Windows temp-root
+environment. The EXE and installer are intentionally unsigned; Windows may
+show a SmartScreen warning. Verify the SHA-256 values in
+[docs/RELEASE_ARTIFACTS.md](docs/RELEASE_ARTIFACTS.md), and do not interpret
+the artifacts as trusted code-signed binaries.
+
+## Quick start
+
+```powershell
+dwi --version
+dwi scan PATH --json
+dwi scan-system --root PATH --json
+dwi cleanup PATH --json
+dwi desktop
+dwi-mcp
+```
+
+For source checkouts, replace `dwi` with `python -m dwi`. CLI details are in
+[docs/CLI.md](docs/CLI.md), and Desktop details are in
+[docs/DESKTOP.md](docs/DESKTOP.md).
+
+Cleanup requires an exact human review and confirmation. It never accepts an
+arbitrary mutation path from an agent. Each item is revalidated immediately
+before the reversible quarantine move; partial results and reconciliation
+states remain explicit.
+
+## MCP agent boundary
+
+Start the local server with:
+
+```powershell
+dwi-mcp
+```
+
+The transport is stdin/stdout only. The 13 tools expose read-only scans,
+findings, explanations, cleanup review, trusted-human-confirmation status,
+fresh-revalidated execution requests, recovery status and recovery-handle Undo.
+The MCP caller is untrusted:
+
+- no raw-path mutation tool exists;
+- no agent-supplied confirmation phrase creates human consent;
+- no caller-supplied risk, validation, authorization or trusted snapshot is
+  accepted;
+- handles are server-owned, bounded, expiring and invalidated on restart;
+- roots, finding selections, messages and pages have hard limits.
+
+Read [docs/MCP.md](docs/MCP.md) for the complete workflow. DWI is offline-first:
+there is no telemetry, analytics, cloud API, hidden update check or default
+network listener.
+
+## Safety and limitations
+
+DWI is conservative when evidence is missing, failed, partial, conflicting or
+ambiguous. Confirmed reachability and protected roots veto cleanup eligibility.
+Links/reparse points are not followed, `.git` is context/protection rather than
+a cleanup candidate, and the Windows mutation gate rejects protected, network,
+reparse, root-escape and alias cases.
+
+Cleanup is deliberately limited to reversible Quarantine + Journal + Undo.
+The release candidate does not claim transactional filesystem semantics,
+crash-proof atomicity, automatic cleanup, permanent deletion, cloud operation,
+or trusted code signing. Windows SmartScreen may warn because the RC EXE and
+installer are unsigned. See [docs/SAFETY_INVARIANTS.md](docs/SAFETY_INVARIANTS.md)
+and [docs/RELEASE_READINESS.md](docs/RELEASE_READINESS.md).
+
+## Development and validation
+
+```powershell
+python -m pip install pytest==9.1.1  # test-only dependency
+python -m pytest -q
+python -m compileall -q dwi scripts
+python scripts\clean_env_smoke.py
+python -m dwi evaluate-readonly --max-seconds 5 --max-nodes 2000 --max-files 2000
 python -m dwi benchmark
 ```
 
-## Desktop v0.4
+Packaging and Windows build instructions are in
+[docs/BUILD_WINDOWS.md](docs/BUILD_WINDOWS.md). Evaluation methodology is in
+[docs/EVALUATION.md](docs/EVALUATION.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+Contributors must follow [CONTRIBUTING.md](CONTRIBUTING.md). Security-sensitive
+reports are described in [SECURITY.md](SECURITY.md).
 
-Desktop is internal/pre-public and Windows-oriented. It is presentation plus
-orchestration over the frozen deterministic scan, Safety Policy, cleanup
-application, and mutation layers. It supports system overview, partial-scan
-visibility, findings filtering/search/sort, evidence and RuleTrace details,
-exact cleanup review and HumanConfirmation, fresh revalidation, per-item
-quarantine outcomes, reconciliation-required handling, and Recovery/Undo.
+When the repository is public, sensitive reports belong in GitHub Security —
+Report a vulnerability / Security Advisories, not a public Issue. Enable
+Private Vulnerability Reporting when publishing the repository; normal bugs
+belong in regular Issues.
 
-The application uses the trusted in-process capability model. It never accepts
-a raw cleanup path, manufactures `RiskLabel` or `ActionEligibility`, creates
-`PlanValidation` or `ExecutionAuthorization`, serializes capabilities, or
-performs filesystem mutation directly. Cleanup is Quarantine + Journal + Undo;
-there is no permanent deletion, telemetry, upload, cloud/API call, or network
-listener. MCP uses stdin/stdout only and treats every caller as untrusted.
-The developer smoke path owns its temporary fixture and never targets
-arbitrary real-machine data.
+## Project status and license
 
-The scanner recognizes only the documented artifact names, does not follow
-links or reparse points, excludes `.git` from cleanup candidates, and reports
-unknown or incomplete observations conservatively.
-
-`scan-system` applies the Scan Safety Gate: local fixed drives and approved
-local roots are allowed, UNC/network roots are denied by default, links and
-reparse points are never followed, and limits or cancellation produce
-deterministic partial results. Use `--allow-network` only for an explicit
-opt-in; network scanning is never the default.
-
-DWI analysis and public interfaces are offline-first and read-only. The
-internal human CLI, Desktop, and MCP are cleanup presentation/request adapters
-and only delegate through the reviewed disposable-root or approved-local-root gate
-described above. The gate binds lexical paths to authoritative Windows
-final paths, rejects short-name aliases to protected roots, and claims each
-plan item before writing mutation lifecycle records. DWI performs no telemetry, automatic diagnostic upload, HTTP, cloud, or
-API communication. Network filesystem access
-is denied by default; explicit `--allow-network` may perform filesystem I/O on
-approved UNC, mapped, or other network-backed roots. Reports containing paths
-remain local to the machine.
-
-Read the documents in this order:
-
-1. [Project vision](docs/PROJECT_VISION.md)
-2. [Domain model](docs/DOMAIN_MODEL.md)
-3. [Safety invariants](docs/SAFETY_INVARIANTS.md)
-4. [Architecture](docs/ARCHITECTURE.md)
-5. [Evidence catalog](docs/EVIDENCE_CATALOG.md)
-6. [Adversarial cases](docs/ADVERSARIAL_CASES.md)
-7. [Roadmap](docs/ROADMAP.md)
-8. [Tasks](TASKS.md)
-9. [MCP boundary](docs/MCP.md)
-10. [Read-only evaluation](docs/EVALUATION.md)
-11. [Benchmarks](docs/BENCHMARKS.md)
-12. [Windows packaging foundation](docs/BUILD_WINDOWS.md)
-13. [Release readiness](docs/RELEASE_READINESS.md)
-
-## Safety position
-
-DWI must work without an AI provider. Deterministic evidence collection and ordered safety rules are the source of truth. An LLM may eventually explain an already-computed result, but it must never participate in the safety decision path.
-
-Artifact names never map directly to risk labels. A low-risk label is available only after sufficient evidence passes the ordered safety gates. Runtime uncertainty defaults to `REVIEW_REQUIRED`.
-
-The current bounded implementation boundary and exactly one next task are recorded in [TASKS.md](TASKS.md).
-
-The v0.3 contract layer defines immutable engine-generated cleanup plans,
-explicit trusted scan/root bindings, review sessions, typed human confirmation,
-immediate revalidation, and separate engine-provenance-backed execution
-authorization. A `CleanupPlan` is a proposal, not permission to mutate data.
-The internal application service accepts only that exact review/confirmation/
-validation/authorization chain and records reversible per-item moves in an
-append-only journal; it is not a public cleanup executor.
-The mutation functions are intentionally kept in the internal `dwi.mutation`
-module and are not exported as convenient top-level package APIs. In addition
-to the marked disposable test-root capability, the internal Windows gate can
-issue an approved-local-root capability only from the exact authorized plan;
-it rejects protected/system/network/reparse/root-escape cases. Any future
-untrusted interface must use opaque engine-issued handles rather than
-constructing mutation capabilities.
-
-The current reversible strategy is DWI-managed same-volume quarantine with a
-chained local journal and recovery identifiers. The internal cleanup CLI is a
-single-process review/confirmation adapter: its engine capabilities are never
-serialized or accepted from callers, and Undo is addressed only by an
-engine-issued recovery identifier during that process. MCP adds only
-server-owned opaque handles and does not persist authority across restart.
-Windows Recycle Bin integration is deferred until deterministic recovery
-metadata, auditable state, and restart-safe Undo semantics are demonstrated.
-There is no public release, arbitrary raw-path mutation API, or permanent
-deletion.
-
-Future cleanup operations must consume immutable engine-generated plans and
-validated plan-item identifiers. No interface may expose arbitrary raw-path
-deletion.
-
-## Release and language strategy
-
-Versions v0.1 through v0.5 are internal development milestones. DWI will be
-released publicly on GitHub only as v1.0.0, after the complete North Star and
-the full Definition of Done in [docs/ROADMAP.md](docs/ROADMAP.md) are reached.
-
-DWI is bilingual:
-
-- English (`en`) is the primary language for international users and public
-  GitHub documentation.
-- Vietnamese (`vi`) supports Vietnamese users.
-
-Human-facing Desktop, CLI, messages, and documentation will support
-localization. MCP machine-facing contracts remain stable and language-neutral:
-JSON keys, enums, `RiskLabel` values, MCP tool names, API/schema identifiers,
-and internal evidence keys do not change by language. Future public
-documentation will provide `README.md` in English and `README.vi.md` in
-Vietnamese. Human confirmation remains outside the MCP agent channel.
+The RC is prepared for independent public-release audit. It is not published
+and does not imply that the final `1.0.0` release is authorized. The project
+is distributed under the [MIT License](LICENSE). See
+[CHANGELOG.md](CHANGELOG.md) for milestone history and RC notes.

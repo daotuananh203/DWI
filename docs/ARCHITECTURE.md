@@ -229,8 +229,9 @@ The release-readiness layer adds a read-only real-machine evaluation command,
 disposable synthetic scan/pagination benchmarks, single-source development
 versioning, package metadata, and a Windows build script. These adapters do
 not create journal, quarantine, recovery, or authorization state. Build
-artifacts, installer/signing validation, and public release remain outside this
-batch.
+artifacts, unsigned-installer validation, and public release are recorded by
+the v1.0 release-candidate gate; trusted code signing remains a future
+operational improvement.
 
 ## Localization boundary
 

@@ -313,7 +313,11 @@ class CleanupCliTests(unittest.TestCase):
                 patch("dwi.cleanup_cli.execute_cleanup_session", return_value=result), \
                 patch("dwi.cleanup_cli.workspace_engine_revalidator", return_value=self._engine_revalidator()), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            code = run_cleanup(str(self.root), confirmation_phrase=CONFIRMATION_PHRASE)
+            code = run_cleanup(
+                str(self.root),
+                confirmation_phrase=CONFIRMATION_PHRASE,
+                input_fn=lambda _prompt: "",
+            )
         self.assertEqual(code, 4)
         self.assertIn("partial", output.getvalue())
         self.assertIn("recovery-test", output.getvalue())

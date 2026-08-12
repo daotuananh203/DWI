@@ -64,7 +64,11 @@ class AnalysisResult:
     interpretation: Interpretation
 
 
-def analyze_candidate(path: str | os.PathLike[str]) -> AnalysisResult | None:
+def analyze_candidate(
+    path: str | os.PathLike[str],
+    *,
+    disposable_root: bool = False,
+) -> AnalysisResult | None:
     """Analyze one explicitly named candidate; never discovers neighboring paths."""
 
     candidate = Path(path)
@@ -73,7 +77,7 @@ def analyze_candidate(path: str | os.PathLike[str]) -> AnalysisResult | None:
         detection = inspect_pycache(candidate)
         return AnalysisResult(ArtifactKind.PYCACHE, detection, interpret_pycache(detection))
     if name == ".pytest_cache":
-        detection = inspect_pytest_cache(candidate)
+        detection = inspect_pytest_cache(candidate, disposable_root=disposable_root)
         return AnalysisResult(ArtifactKind.PYTEST_CACHE, detection, interpret_pytest_cache(detection))
     if name == ".mypy_cache":
         detection = inspect_mypy_cache(candidate)

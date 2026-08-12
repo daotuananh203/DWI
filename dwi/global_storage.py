@@ -358,7 +358,7 @@ def inspect_global_storage(
     if valid:
         marker = _observed("global_storage_marker_observation", "A tool-specific global cache marker was observed.", value=artifact.value)
         structure = _observed("global_storage_structure_observation", description, value=",".join(sorted(entries)))
-        node = ObservedNode(str(inspected_path), NodeKind.DIRECTORY, ProtectionClass.UNKNOWN)
+        node = ObservedNode(str(inspected_path), NodeKind.DIRECTORY, ProtectionClass.ORDINARY)
     else:
         marker = _failed("global_storage_marker_observation", "Tool-specific global cache markers were not sufficient to identify this root.")
         structure = _failed("global_storage_structure_observation", description)

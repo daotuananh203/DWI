@@ -194,6 +194,36 @@ class MutationPrimitiveTests(unittest.TestCase):
         )
         return dataclasses.replace(entry, record_hash=_entry_hash(entry))
 
+    def test_concurrent_journal_appends_preserve_a_valid_chain(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        item = plan.items[0]
+        entries = tuple(
+            self._manual_entry(
+                plan,
+                validation,
+                authorization,
+                item,
+                QuarantineState.PLANNED,
+                f"recovery-concurrent-{index}",
+                os.path.join(self.quarantine_root.path, f"payload-{index}"),
+            )
+            for index in (1, 2)
+        )
+        def append_one(entry):
+            try:
+                self.journal.append(entry)
+                return "ok"
+            except JournalError:
+                return "rejected"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = tuple(executor.map(append_one, entries))
+        self.assertEqual(outcomes.count("ok"), 1)
+        self.assertEqual(outcomes.count("rejected"), 1)
+        self.assertEqual(len(self.journal.read_entries()), 1)
+        self.assertEqual(self.journal.read_entries()[0].sequence, 1)
+
     def test_valid_authorized_quarantine_is_reversible_and_journaled(self) -> None:
         plan = self._plan()
         validation, authorization = self._authorization(plan)
@@ -258,6 +288,23 @@ class MutationPrimitiveTests(unittest.TestCase):
                     path.rmdir()
                 else:
                     path.unlink()
+
+    def test_restore_blocks_when_inventory_contains_unjournaled_payload(self) -> None:
+        plan = self._plan()
+        validation, authorization = self._authorization(plan)
+        result = quarantine_plan(
+            plan, validation, authorization, self.disposable, self.quarantine_root, self.journal, clock=self.clock,
+        )
+        recovery_id = result.records[0].metadata.recovery_id
+        original = Path(plan.items[0].snapshot.path)
+        self.assertFalse(original.exists())
+        rogue = Path(self.quarantine_root.path, "UNJOURNALED.bin")
+        rogue.write_bytes(b"unaccounted")
+        blocked = restore_recovery(recovery_id, self.journal, self.disposable, self.quarantine_root, clock=self.clock)
+        self.assertEqual(blocked.state, QuarantineState.RECONCILIATION_REQUIRED)
+        self.assertIn("reconciliation", (blocked.failure_reason or "").casefold())
+        self.assertFalse(original.exists())
+        self.assertTrue(rogue.exists())
 
     def test_expected_quarantine_payload_missing_or_identity_changed_fails_closed(self) -> None:
         plan = self._plan()
@@ -595,7 +642,7 @@ class MutationPrimitiveTests(unittest.TestCase):
         forged = dataclasses.replace(forged, record_hash=_entry_hash(forged))
         self.journal.append(forged)
         restored = restore_recovery("forged-recovery", self.journal, self.disposable, self.quarantine_root, clock=self.clock)
-        self.assertEqual(restored.state, QuarantineState.FAILED)
+        self.assertEqual(restored.state, QuarantineState.RECONCILIATION_REQUIRED)
         self.assertFalse(outside.exists())
 
     def test_journal_corruption_is_detectable_and_blocks_restore(self) -> None:
@@ -655,11 +702,11 @@ class MutationPrimitiveTests(unittest.TestCase):
         moved = Path(metadata.quarantine_path).with_name("changed-quarantine")
         os.rename(metadata.quarantine_path, moved)
         changed = restore_recovery(metadata.recovery_id, self.journal, self.disposable, self.quarantine_root, clock=self.clock)
-        self.assertEqual(changed.state, QuarantineState.FAILED)
+        self.assertEqual(changed.state, QuarantineState.RECONCILIATION_REQUIRED)
         os.rename(moved, metadata.quarantine_path)
         os.rename(metadata.quarantine_path, moved)
         missing = restore_recovery(metadata.recovery_id, self.journal, self.disposable, self.quarantine_root, clock=self.clock)
-        self.assertEqual(missing.state, QuarantineState.FAILED)
+        self.assertEqual(missing.state, QuarantineState.RECONCILIATION_REQUIRED)
 
     def test_repeated_restore_is_idempotent(self) -> None:
         plan = self._plan()

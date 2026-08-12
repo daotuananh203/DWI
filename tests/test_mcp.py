@@ -307,6 +307,13 @@ class McpBoundaryTests(McpTestBase):
         self.assertEqual(responses[0]["error"]["data"]["code"], McpErrorCode.RESOURCE_LIMIT.value)
         self.assertIn("result", responses[1])
 
+    def test_stdio_rejects_nonfinite_json_rpc_ids(self) -> None:
+        output = io.StringIO()
+        McpServer(self.service).serve_stdio(io.StringIO('{"jsonrpc":"2.0","id":NaN,"method":"tools/list"}\n'), output)
+        response = json.loads(output.getvalue().splitlines()[0])
+        self.assertEqual(response["error"]["code"], -32700)
+        self.assertIsNone(response["id"])
+
     def test_oversized_response_is_replaced_by_bounded_protocol_error(self) -> None:
         class HugeService:
             tool_definitions = ()
@@ -406,6 +413,72 @@ class McpExecutionTests(McpTestBase):
             channel=self.service.create_human_channel(),
         )
         return self.service.call_tool("dwi_request_cleanup_execution", {"review_handle": review_handle})["execution_handle"]
+
+    def test_capacity_shortfall_is_reported_before_execution_handle_or_mutation(self) -> None:
+        service = McpService(
+            scan_fn=lambda _options: self.scan,
+            handle_capacity=3,
+            handle_ttl_seconds=900,
+        )
+        scan_result = service.call_tool("dwi_scan_root", {"root": ROOT})
+        finding_id = service.call_tool("dwi_list_findings", {"scan_handle": scan_result["scan_handle"]})["findings"][0]["finding_id"]
+        review = service.call_tool("dwi_create_cleanup_review", {
+            "scan_handle": scan_result["scan_handle"],
+            "finding_ids": [finding_id],
+        })
+        service.confirm_from_human_channel(
+            review["review_handle"],
+            confirmation_phrase="I reviewed this exact cleanup plan.",
+            channel=service.create_human_channel(),
+        )
+        with patch("dwi.mcp.service.execute_cleanup_session") as execute:
+            with self.assertRaises(McpServiceError) as context:
+                service.call_tool("dwi_request_cleanup_execution", {"review_handle": review["review_handle"]})
+            execute.assert_not_called()
+        self.assertEqual(context.exception.code, McpErrorCode.RESOURCE_LIMIT)
+        self.assertIsNone(service._store.resolve(review["review_handle"], McpHandleType.REVIEW).payload.execution_handle)
+
+    def test_reserved_execution_retains_recovery_handle_capacity_after_mutation(self) -> None:
+        service = McpService(
+            scan_fn=lambda _options: self.scan,
+            handle_capacity=4,
+            handle_ttl_seconds=900,
+        )
+        scan_result = service.call_tool("dwi_scan_root", {"root": ROOT})
+        finding_id = service.call_tool("dwi_list_findings", {"scan_handle": scan_result["scan_handle"]})["findings"][0]["finding_id"]
+        review = service.call_tool("dwi_create_cleanup_review", {
+            "scan_handle": scan_result["scan_handle"],
+            "finding_ids": [finding_id],
+        })
+        service.confirm_from_human_channel(
+            review["review_handle"],
+            confirmation_phrase="I reviewed this exact cleanup plan.",
+            channel=service.create_human_channel(),
+        )
+        execution = service.call_tool("dwi_request_cleanup_execution", {"review_handle": review["review_handle"]})
+        execution_handle = execution["execution_handle"]
+        session = service._store.resolve(execution_handle, McpHandleType.EXECUTION).payload.review.session
+        fake_result = CleanupApplicationResult(
+            session.session_id,
+            session.plan.plan_id,
+            CleanupSessionState.PARTIAL,
+            None,
+            None,
+            (CleanupItemResult(
+                session.plan.items[0].plan_item_id,
+                CleanupItemOutcome.RECOVERABLE,
+                QuarantineState.QUARANTINED,
+                "recovery-capacity",
+                None,
+            ),),
+            None,
+            "items were processed independently",
+        )
+        fake_runtime = SimpleNamespace(provider=object())
+        with patch("dwi.mcp.service.execute_cleanup_session", return_value=fake_result), patch.object(service, "_runtime_factory", return_value=fake_runtime):
+            result = service.call_tool("dwi_execute_cleanup", {"execution_handle": execution_handle})
+        self.assertEqual(result["status"], "PARTIAL_RESULT")
+        self.assertIsNotNone(result["item_results"][0]["recovery_handle"])
 
     def test_execution_calls_application_service_and_is_one_shot(self) -> None:
         execution_handle = self._ready_execution()
@@ -576,6 +649,21 @@ class McpSafetyIntegrationTests(unittest.TestCase):
 
 
 class McpHandleStoreResourceTests(unittest.TestCase):
+    def test_inflight_reservation_survives_ttl_until_operation_releases_it(self) -> None:
+        now = [0.0]
+        store = OpaqueHandleStore(ttl_seconds=1, max_entries=3, clock=lambda: now[0])
+        reservation = store.reserve(3)
+        store.issue(McpHandleType.EXECUTION, object(), reservation=reservation)
+        reservation.begin()
+        now[0] = 2.0
+        store.issue(McpHandleType.SCAN, object())
+        with self.assertRaises(McpServiceError) as context:
+            store.issue(McpHandleType.SCAN, object())
+        self.assertEqual(context.exception.code, McpErrorCode.RESOURCE_LIMIT)
+        reservation.release()
+        replacement = store.issue(McpHandleType.SCAN, object())
+        self.assertEqual(store.state(replacement, McpHandleType.SCAN), McpHandleState.ACTIVE)
+
     def test_expiration_reclaims_payload_and_returns_stale(self) -> None:
         now = [0.0]
 

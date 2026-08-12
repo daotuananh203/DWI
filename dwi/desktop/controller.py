@@ -23,7 +23,7 @@ from ..cleanup_engine import (
     system_engine_revalidator,
     workspace_mutation_runtime,
 )
-from ..domain import ActionEligibility
+from ..domain import ActionEligibility, RiskLabel
 from ..pipeline import Finding as PipelineFinding
 from ..scan_control import ScanLimits, ScanTermination
 from ..system_scan import RootStatus, SystemScan, SystemScanOptions, scan_system
@@ -124,19 +124,25 @@ def finding_key(finding: PipelineFinding) -> str:
     return f"{finding.artifact.value}::{finding.path.casefold()}"
 
 
-def _format_provenance(finding: PipelineFinding) -> str:
-    provenance = finding.interpretation.provenance
-    return f"{provenance.ecosystem}/{provenance.generator}"
+def _format_provenance(finding: PipelineFinding, *, unknown_label: str = "Unknown") -> str:
+    """Format optional provenance without turning unknown evidence into a UI error."""
+
+    provenance = getattr(getattr(finding, "interpretation", None), "provenance", None)
+    ecosystem = getattr(provenance, "ecosystem", None)
+    generator = getattr(provenance, "generator", None)
+    if not ecosystem or not generator:
+        return unknown_label
+    return f"{ecosystem}/{generator}"
 
 
-def finding_to_row(finding: PipelineFinding) -> FindingRow:
+def finding_to_row(finding: PipelineFinding, *, unknown_label: str = "Unknown") -> FindingRow:
     interpretation = finding.interpretation
     priority = interpretation.reclaim_priority.value if interpretation.reclaim_priority else "unknown"
     return FindingRow(
         finding_key(finding),
         finding.path,
         finding.artifact.value,
-        _format_provenance(finding),
+        _format_provenance(finding, unknown_label=unknown_label),
         finding.size.known_bytes,
         finding.size.complete,
         finding.risk_label.value,
@@ -418,7 +424,7 @@ class DesktopController:
                 or (eligibility == "review_only" and not (finding.action_eligibility is ActionEligibility.ELIGIBLE_FOR_EXPLICIT_ACTION and finding.risk_label.value in {"safe", "regeneratable"}))
             )
             and (artifact == "all" or finding.artifact.value == artifact)
-            and (provenance == "all" or _format_provenance(finding) == provenance)
+            and (provenance == "all" or _format_provenance(finding, unknown_label=self.translator("detail.unknown")) == provenance)
         )
         if self._sort == "size":
             values = tuple(sorted(values, key=lambda finding: (-finding.size.known_bytes, finding.path.casefold())))
@@ -429,7 +435,30 @@ class DesktopController:
         return values
 
     def finding_rows(self) -> tuple[FindingRow, ...]:
-        return tuple(finding_to_row(finding) for finding in self.filtered_findings())
+        rows: list[FindingRow] = []
+        unknown_label = self.translator("detail.unknown")
+        for finding in self.filtered_findings():
+            try:
+                rows.append(finding_to_row(finding, unknown_label=unknown_label))
+            except Exception:
+                # A partial observation must not hide the rest of the scan.
+                rows.append(FindingRow(
+                    key=finding_key(finding),
+                    path=str(getattr(finding, "path", unknown_label)),
+                    artifact=str(getattr(getattr(finding, "artifact", None), "value", unknown_label)),
+                    provenance=unknown_label,
+                    known_bytes=0,
+                    size_complete=False,
+                    risk_label=RiskLabel.REVIEW_REQUIRED.value,
+                    action_eligibility=ActionEligibility.REQUIRES_REVIEW.value,
+                    regenerability=unknown_label,
+                    reachability=unknown_label,
+                    activity=unknown_label,
+                    protection=unknown_label,
+                    reclaim_priority=unknown_label,
+                    executable=False,
+                ))
+        return tuple(rows)
 
     def finding_details(self, key: str) -> PipelineFinding | None:
         return self._findings.get(key)

@@ -11,6 +11,8 @@ env/
 .coverage
 htmlcov/
 coverage.xml
+uv.lock
+
 
 # Build and packaging output
 build/
@@ -28,6 +30,15 @@ dist/
 # DWI local reports and caches
 .dwi/
 reports/
+
+# Release-candidate artifacts are validated outside the source tree and are
+# never committed as binaries.
+release-artifacts/
+*.exe
+*.msi
+*.whl
+*.tar.gz
+*.zip
 
 # OS files
 Thumbs.db

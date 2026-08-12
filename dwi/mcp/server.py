@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from typing import TextIO
 
@@ -19,7 +20,11 @@ _MAX_READ_CHARS = MCP_MAX_REQUEST_BYTES + 2
 
 
 def _json_bytes(value: object) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+
+
+def _reject_nonfinite_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON constant is not permitted: {value}")
 
 
 class McpServer:
@@ -40,6 +45,12 @@ class McpServer:
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
         request_id = message.get("id")
+        if request_id is not None and (
+            isinstance(request_id, bool)
+            or not isinstance(request_id, (str, int, float))
+            or (isinstance(request_id, float) and not math.isfinite(request_id))
+        ):
+            return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "JSON-RPC id must be finite"}}
         method = message.get("method")
         if not isinstance(method, str):
             return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32600, "message": "Invalid Request"}}
@@ -108,13 +119,14 @@ class McpServer:
         if "\n" not in line and len(line) >= _MAX_READ_CHARS:
             oversized = True
         if oversized:
-            # Drain only this line, one character at a time, so a valid request
-            # following the rejected message remains available to the server.
-            while "\n" not in line:
-                character = input_stream.read(1)
-                if not character:
-                    break
-                line = character
+            # The bounded initial read stops before an attacker-controlled line
+            # can consume the following request. Drain the remainder in bounded
+            # chunks so a huge line never becomes one unbounded Python string.
+            if "\n" not in line:
+                while True:
+                    remainder = input_stream.readline(8192)
+                    if not remainder or "\n" in remainder:
+                        break
         return (None if oversized else payload), oversized
 
     def serve_stdio(self, input_stream: TextIO | None = None, output_stream: TextIO | None = None) -> int:
@@ -141,8 +153,8 @@ class McpServer:
                 continue
             else:
                 try:
-                    response = self.handle_message(json.loads(line))
-                except json.JSONDecodeError:
+                    response = self.handle_message(json.loads(line, parse_constant=_reject_nonfinite_constant))
+                except (json.JSONDecodeError, ValueError):
                     response = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
             if response is not None:
                 encoded = _json_bytes(response)

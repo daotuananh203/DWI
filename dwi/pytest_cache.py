@@ -267,7 +267,11 @@ def _read_marker(path: Path, marker_name: str) -> tuple[Evidence, bool, bool]:
     )
 
 
-def inspect_pytest_cache(path: str | os.PathLike[str]) -> PytestCacheDetection:
+def inspect_pytest_cache(
+    path: str | os.PathLike[str],
+    *,
+    disposable_root: bool = False,
+) -> PytestCacheDetection:
     """Inspect one path and its direct children without recursion or mutation."""
 
     inspected_path = Path(path)
@@ -434,11 +438,49 @@ def inspect_pytest_cache(path: str | os.PathLike[str]) -> PytestCacheDetection:
         )
     )
 
+    if disposable_root:
+        # The scanner has already verified the exact disposable-root marker.
+        # Replace unknown context observations with explicit, bounded evidence;
+        # absence of a marker remains unknown and therefore fail-closed.
+        context_keys = {
+            "recreation_input_availability_observation",
+            "reference_check_observation",
+            "runtime_activity_observation",
+            "protection_indicator_observation",
+        }
+        observations = [item for item in observations if item.key not in context_keys]
+        observations.extend((
+            _observed(
+                "disposable_root_marker_observation",
+                "The approved root contains the exact DWI disposable-root marker.",
+                value="DWI-DISPOSABLE-ROOT-v0.3",
+            ),
+            _observed(
+                "recreation_input_availability_observation",
+                "The explicitly marked disposable scope permits regeneration of this cache family.",
+                value="disposable-scope",
+            ),
+            _confirmed_absent(
+                "reference_check_observation",
+                "The explicitly marked disposable scope establishes no retained consumer for this bounded fixture.",
+            ),
+            _observed(
+                "runtime_activity_observation",
+                "The explicitly marked disposable scope is inactive for this bounded fixture.",
+                value=ActivityState.INACTIVE.value,
+            ),
+            _observed(
+                "protection_indicator_observation",
+                "The bounded fixture is an ordinary, non-reparse disposable directory.",
+                value=ProtectionClass.ORDINARY.value,
+            ),
+        ))
+
     return PytestCacheDetection(
         node=ObservedNode(
             path=str(inspected_path),
             kind=NodeKind.DIRECTORY,
-            protection=ProtectionClass.UNKNOWN,
+            protection=ProtectionClass.ORDINARY if disposable_root else ProtectionClass.UNKNOWN,
         ),
         observations=tuple(observations),
     )

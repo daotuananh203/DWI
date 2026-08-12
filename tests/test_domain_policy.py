@@ -235,9 +235,9 @@ class DomainAndPolicyTests(unittest.TestCase):
         self.assertEqual(decision.regenerability, RegenerabilityState.REPRODUCIBLE)
         self.assertEqual(decision.risk_label, RiskLabel.REVIEW_REQUIRED)
 
-    def test_active_runtime_blocks_action_without_escalating_intrinsic_risk(self) -> None:
+    def test_active_runtime_escalates_risk_and_blocks_action(self) -> None:
         decision = evaluate_safety(context(activity=ActivityState.ACTIVE_RUNTIME))
-        self.assertEqual(decision.risk_label, RiskLabel.REGENERATABLE)
+        self.assertEqual(decision.risk_label, RiskLabel.REVIEW_REQUIRED)
         self.assertEqual(decision.activity, ActivityState.ACTIVE_RUNTIME)
         self.assertEqual(decision.action_eligibility, ActionEligibility.BLOCKED)
 

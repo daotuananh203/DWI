@@ -188,6 +188,13 @@ def evaluate_safety(context: SafetyContext, *, engine_version: str = "dwi-domain
             RiskLabel.REVIEW_REQUIRED,
             "Runtime activity is unknown or conflicting.",
         )
+    elif context.activity is ActivityState.ACTIVE_RUNTIME:
+        apply_rule(
+            "active_runtime_risk_floor",
+            True,
+            RiskLabel.REVIEW_REQUIRED,
+            "A confirmed active runtime consumer establishes a REVIEW_REQUIRED risk floor.",
+        )
     else:
         apply_rule(
             "activity_uncertain",

@@ -31,7 +31,7 @@ class DesktopApp:
         self.controller.subscribe(lambda _state: self.root.after(0, self.render))
         self._closing = False
         self._close_poll_id: str | None = None
-        self._localized: list[tuple[tk.Misc, str]] = []
+        self._localized: list[tuple[tk.Misc, str, dict[str, object]]] = []
         self._build()
         self.render()
 
@@ -40,12 +40,12 @@ class DesktopApp:
 
     def _label(self, parent: tk.Misc, key: str, **kwargs: Any) -> ttk.Label:
         widget = ttk.Label(parent, text=self.t(key, **kwargs))
-        self._localized.append((widget, key))
+        self._localized.append((widget, key, dict(kwargs)))
         return widget
 
     def _button(self, parent: tk.Misc, key: str, command: Any, **kwargs: Any) -> ttk.Button:
         widget = ttk.Button(parent, text=self.t(key, **kwargs), command=command)
-        self._localized.append((widget, key))
+        self._localized.append((widget, key, dict(kwargs)))
         return widget
 
     def _build(self) -> None:
@@ -243,7 +243,7 @@ class DesktopApp:
         self.network_var = tk.BooleanVar(value=False)
         self.network_check = ttk.Checkbutton(self.settings, text=self.t("settings.network"), variable=self.network_var, command=self._network_changed)
         self.network_check.grid(row=4, column=1, sticky="w", padx=10, pady=(16, 4))
-        self._localized.append((self.network_check, "settings.network"))
+        self._localized.append((self.network_check, "settings.network", {}))
         self._label(self.settings, "settings.network_warning").grid(row=5, column=1, sticky="w", padx=10)
         self._label(self.settings, "settings.trust").grid(row=6, column=1, sticky="w", padx=10, pady=(18, 0))
 
@@ -264,9 +264,12 @@ class DesktopApp:
             seconds = float(self.limit_vars["seconds"].get())
             nodes = int(self.limit_vars["nodes"].get())
             files = int(self.limit_vars["files"].get())
+            from ..scan_control import ScanLimits
+
+            ScanLimits(max_seconds=seconds, max_nodes=nodes, max_files=files)
             self.controller.set_scan_limits(max_seconds=seconds, max_nodes=nodes, max_files=files)
         except (KeyError, TypeError, ValueError) as error:
-            self.controller.state.error_message = str(error)
+            self.controller.state.error_message = self.t("error.invalid_limits", reason=str(error))
             self.render()
             return False
         return True
@@ -286,21 +289,23 @@ class DesktopApp:
         finding = self.controller.finding_details(selection[0])
         if finding is None:
             return
-        interpretation = finding.interpretation
-        decision = finding.safety_decision
+        interpretation = getattr(finding, "interpretation", None)
+        decision = getattr(finding, "safety_decision", None)
+        evidence = getattr(getattr(finding, "evidence", None), "observations", ())
+        provenance = getattr(interpretation, "provenance", None)
         payload = {
-            self.t("detail.evidence"): [item.__dict__ for item in finding.evidence.observations],
-            self.t("detail.provenance"): interpretation.provenance.__dict__,
+            self.t("detail.evidence"): [getattr(item, "__dict__", str(item)) for item in evidence],
+            self.t("detail.provenance"): getattr(provenance, "__dict__", None) if provenance is not None else self.t("detail.unknown"),
             self.t("detail.interpretation"): {
-                "regenerability": interpretation.regenerability.value,
-                "regeneration_cost": interpretation.regeneration_cost.value,
-            },
-            self.t("detail.reachability"): interpretation.reachability.value,
-            self.t("detail.activity"): interpretation.activity.value,
-            self.t("detail.protection"): interpretation.protection.value,
-            self.t("detail.safety"): decision.__dict__ if decision is not None else self.t("detail.unknown"),
-            self.t("detail.trace"): decision.rule_trace.__dict__ if decision is not None else self.t("detail.unknown"),
-            self.t("detail.warnings"): list(finding.size.observation_failures),
+                "regenerability": getattr(getattr(interpretation, "regenerability", None), "value", self.t("detail.unknown")),
+                "regeneration_cost": getattr(getattr(interpretation, "regeneration_cost", None), "value", self.t("detail.unknown")),
+            } if interpretation is not None else self.t("detail.unknown"),
+            self.t("detail.reachability"): getattr(getattr(interpretation, "reachability", None), "value", self.t("detail.unknown")),
+            self.t("detail.activity"): getattr(getattr(interpretation, "activity", None), "value", self.t("detail.unknown")),
+            self.t("detail.protection"): getattr(getattr(interpretation, "protection", None), "value", self.t("detail.unknown")),
+            self.t("detail.safety"): getattr(decision, "__dict__", None) if decision is not None else self.t("detail.unknown"),
+            self.t("detail.trace"): getattr(getattr(decision, "rule_trace", None), "__dict__", None) if decision is not None else self.t("detail.unknown"),
+            self.t("detail.warnings"): list(getattr(getattr(finding, "size", None), "observation_failures", ())),
         }
         self._set_text(self.finding_detail, json.dumps(payload, indent=2, ensure_ascii=False, default=str))
 
@@ -328,9 +333,9 @@ class DesktopApp:
 
     def _relocalize(self) -> None:
         self.root.title(self.t("app.title"))
-        for widget, key in self._localized:
+        for widget, key, values in self._localized:
             try:
-                widget.configure(text=self.t(key))
+                widget.configure(text=self.t(key, **values))
             except tk.TclError:
                 continue
         for index, key in enumerate(self.tab_keys):
@@ -377,12 +382,13 @@ class DesktopApp:
     def _render_findings(self) -> None:
         for item in self.findings_tree.get_children():
             self.findings_tree.delete(item)
-        for row in self.controller.finding_rows():
+        rows = self.controller.finding_rows()
+        for row in rows:
             self.findings_tree.insert("", "end", iid=row.key, values=(row.path, row.artifact, row.provenance, _bytes(row.known_bytes), "complete" if row.size_complete else "partial", row.risk_label, row.action_eligibility, row.regenerability, row.protection))
         self.selected_var.set(self.t("findings.selected", count=len(self.controller.state.selected_finding_keys)))
-        provenance_values = ("all", *sorted({row.provenance for row in self.controller.finding_rows()}))
+        provenance_values = ("all", *sorted({row.provenance for row in rows}))
         self.provenance_combo.configure(values=provenance_values)
-        artifact_values = ("all", *sorted({row.artifact for row in self.controller.finding_rows()}))
+        artifact_values = ("all", *sorted({row.artifact for row in rows}))
         self.artifact_combo.configure(values=artifact_values)
         self._show_detail()
 
@@ -425,7 +431,8 @@ class DesktopApp:
         if self.controller.busy:
             self._closing = True
             self.controller.request_close()
-            self.render()
+            # Establish polling before any optional redraw. Close safety must
+            # not depend on renderer success; the worker remains authoritative.
             self._close_poll_id = self.root.after(50, self._poll_close)
             return
         if self.controller.close():

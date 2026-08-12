@@ -113,6 +113,7 @@
   "error.ineligible": "Only engine-eligible findings can be selected.",
   "error.reconciliation": "Recovery state requires human review before a new cleanup authorization.",
   "error.generic": "The operation could not complete: {reason}",
+  "error.invalid_limits": "Invalid scan limits: {reason}",
   "status.scanning": "Scanning approved roots…",
   "status.reviewing": "Building an engine-bound cleanup review…",
   "status.revalidating": "Requesting fresh evidence and policy evaluation…",

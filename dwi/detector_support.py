@@ -129,21 +129,41 @@ def context_unknown_evidence(source: str) -> tuple[Evidence, ...]:
 def activity_from_evidence(observations: Iterable[Evidence]) -> ActivityState:
     """Interpret only the activity dimension from detector-neutral evidence."""
 
-    return (
-        ActivityState.CONFLICTING
-        if key_conflicts(observations, "runtime_activity_observation")
-        else ActivityState.UNKNOWN
-    )
+    observations = tuple(observations)
+    if key_conflicts(observations, "runtime_activity_observation"):
+        return ActivityState.CONFLICTING
+    if any(
+        item.polarity.value == "supports"
+        and item.value == ActivityState.INACTIVE.value
+        and not item.is_uncertain
+        for item in observations
+        if item.key == "runtime_activity_observation"
+    ):
+        return ActivityState.INACTIVE
+    if any(
+        item.polarity.value == "supports"
+        and item.value == ActivityState.ACTIVE_RUNTIME.value
+        and not item.is_uncertain
+        for item in observations
+        if item.key == "runtime_activity_observation"
+    ):
+        return ActivityState.ACTIVE_RUNTIME
+    return ActivityState.UNKNOWN
 
 
 def protection_from_evidence(observations: Iterable[Evidence]) -> ProtectionClass:
     """Interpret only the protection dimension from detector-neutral evidence."""
 
-    return (
-        ProtectionClass.CONFLICTING
-        if key_conflicts(observations, "protection_indicator_observation")
-        else ProtectionClass.UNKNOWN
-    )
+    observations = tuple(observations)
+    if key_conflicts(observations, "protection_indicator_observation"):
+        return ProtectionClass.CONFLICTING
+    for item in observations:
+        if item.key != "protection_indicator_observation" or item.polarity.value != "supports" or item.is_uncertain:
+            continue
+        for protection in ProtectionClass:
+            if item.value == protection.value:
+                return protection
+    return ProtectionClass.UNKNOWN
 
 
 def observed_node_kind(path: Path) -> NodeKind:

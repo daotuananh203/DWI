@@ -55,8 +55,8 @@ class ScanLimits:
                 raise ValueError(f"{name} has an invalid numeric type")
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError(f"{name} must be finite")
-            if value < 0:
-                raise ValueError(f"{name} must not be negative")
+            if value <= 0:
+                raise ValueError(f"{name} must be greater than zero")
             if value > maximum:
                 raise ValueError(f"{name} exceeds its hard maximum of {maximum}")
 

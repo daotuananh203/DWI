@@ -66,6 +66,9 @@ class QuarantineState(str, Enum):
     RESTORING = "restoring"
     RESTORE_COMMITTED_UNJOURNALED = "restore_committed_unjournaled"
     RESTORED = "restored"
+    # Result-only state used when recovery inventory is inconsistent. It is
+    # never written as a journal lifecycle record.
+    RECONCILIATION_REQUIRED = "reconciliation_required"
     FAILED = "failed"
 
 
@@ -133,11 +136,11 @@ class TrustedScanContext:
         return self._capability is _ENGINE_SCAN_CAPABILITY
 
     def includes_root(self, root: ApprovedRoot) -> bool:
-        return (
-            self.is_engine_trusted
-            and root.is_engine_trusted
-            and root.scan_provenance == self.scan_provenance
-            and root in self.approved_roots
+        if not (self.is_engine_trusted and root.is_engine_trusted):
+            return False
+        return any(
+            os.path.normcase(os.path.abspath(candidate.path)) == os.path.normcase(os.path.abspath(root.path))
+            for candidate in self.approved_roots
         )
 
 

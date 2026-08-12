@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from dwi.application import CleanupMutationProvider, CleanupSessionState
 from dwi.desktop import DesktopController, DesktopState, DesktopWorker, Translator, WorkerBusyError
-from dwi.desktop.controller import RecoveryRow
+from dwi.desktop.controller import RecoveryRow, finding_to_row
 from dwi.desktop.worker import CancelResult, WorkPhase
 from dwi.domain import ActionEligibility, ActivityState, ProtectionClass, ReachabilityState, RegenerabilityState, RegenerationCost, RiskLabel
 from dwi.scan_control import ScanTermination
@@ -136,8 +136,61 @@ class DesktopTests(unittest.TestCase):
         vietnamese = Translator("vi")
         self.assertEqual(english("nav.findings"), "Findings")
         self.assertEqual(vietnamese("nav.findings"), "Phát hiện")
+        self.assertNotIn("{version}", vietnamese("app.version", version="1.0.0rc1"))
         self.assertEqual(RiskLabel.SAFE.value, "safe")
         self.assertEqual(ActionEligibility.ELIGIBLE_FOR_EXPLICIT_ACTION.value, "eligible_for_explicit_action")
+
+    def test_missing_provenance_is_localized_unknown(self):
+        finding = _finding("C:\\work\\.pytest_cache", eligible=False)
+        finding.interpretation.provenance = None
+        row = finding_to_row(finding)
+        self.assertEqual(row.provenance, "Unknown")
+
+    def test_all_six_findings_render_when_one_has_partial_optional_evidence(self):
+        findings = []
+        for index in range(6):
+            item = _finding(f"C:\\work\\artifact-{index}", eligible=False)
+            if index == 2:
+                item.interpretation.provenance = None
+            findings.append(item)
+        controller = DesktopController()
+        try:
+            controller._scan_succeeded(_scan(tuple(findings)))
+            rows = controller.finding_rows()
+            self.assertEqual(len(rows), 6)
+            self.assertEqual(rows[2].provenance, "Unknown / not observed")
+        finally:
+            controller.close()
+
+    def test_settings_validation_rejects_nonfinite_and_out_of_range_values(self):
+        from dwi.desktop.app import DesktopApp
+        app = object.__new__(DesktopApp)
+        app.controller = DesktopController()
+        app.limit_vars = {
+            "seconds": SimpleNamespace(get=lambda: "nan"),
+            "nodes": SimpleNamespace(get=lambda: "100000"),
+            "files": SimpleNamespace(get=lambda: "100000"),
+        }
+        app.render = Mock()
+        try:
+            self.assertFalse(app._apply_limits())
+            self.assertIn("finite", app.controller.state.error_message)
+            app.limit_vars["seconds"] = SimpleNamespace(get=lambda: "0")
+            self.assertFalse(app._apply_limits())
+            self.assertIn("greater than zero", app.controller.state.error_message)
+            app.limit_vars["seconds"] = SimpleNamespace(get=lambda: "301")
+            self.assertFalse(app._apply_limits())
+            self.assertIn("hard maximum", app.controller.state.error_message)
+            for value, reason in (("inf", "finite"), ("-1", "greater than zero")):
+                app.limit_vars["seconds"] = SimpleNamespace(get=lambda value=value: value)
+                self.assertFalse(app._apply_limits())
+                self.assertIn(reason, app.controller.state.error_message)
+            app.limit_vars["seconds"] = SimpleNamespace(get=lambda: "300")
+            app.limit_vars["nodes"] = SimpleNamespace(get=lambda: "100000")
+            app.limit_vars["files"] = SimpleNamespace(get=lambda: "100000")
+            self.assertTrue(app._apply_limits())
+        finally:
+            app.controller.close()
 
     def test_worker_accepted_cancel_never_calls_success(self):
         worker = DesktopWorker()
@@ -349,11 +402,13 @@ class DesktopCloseTests(unittest.TestCase):
         app.t = lambda key, **_values: controller.translator(key)
         return app
 
-    def test_close_during_cancellable_operation_waits_for_termination(self):
+    def test_close_during_cancellable_operation_still_polls_if_renderer_would_fail(self):
         controller = _FakeCloseController(CancelResult.ACCEPTED)
         app = self._app(controller)
+        app.render = Mock(side_effect=RuntimeError("injected render failure"))
         app.close()
         self.assertFalse(app.root.destroyed)
+        self.assertEqual(len(app.root.callbacks), 1)
         controller.busy = False
         app.root.callbacks.pop(0)()
         self.assertTrue(app.root.destroyed)

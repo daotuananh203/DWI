@@ -17,6 +17,8 @@ import os
 import stat
 import tempfile
 import ctypes
+import threading
+from contextlib import contextmanager
 from ctypes import wintypes
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -47,6 +49,8 @@ _JOURNAL_SCHEMA = "dwi-journal-v0.3"
 _GENESIS_PREVIOUS_HASH = "GENESIS:dwi-journal-v0.3"
 _CLAIM_FILE_PREFIX = ".dwi-claim-"
 _CLAIM_FILE_SUFFIX = ".json"
+_JOURNAL_THREAD_LOCKS: dict[str, threading.RLock] = {}
+_JOURNAL_THREAD_LOCKS_GUARD = threading.Lock()
 MutationClock = Callable[[], str]
 
 
@@ -801,24 +805,61 @@ class AuditJournal:
             entries.append(entry)
         return tuple(entries)
 
+    @contextmanager
+    def _append_lock(self):
+        """Serialize journal read/sequence/hash/append as one operation."""
+
+        key = os.path.normcase(os.path.abspath(self.path))
+        with _JOURNAL_THREAD_LOCKS_GUARD:
+            thread_lock = _JOURNAL_THREAD_LOCKS.setdefault(key, threading.RLock())
+        with thread_lock:
+            if os.name == "nt":
+                name = f"Local\\DWIJournal-{_digest(key)[:32]}"
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.CreateMutexW(None, False, name)
+                if not handle:
+                    raise JournalError("journal process lock could not be created")
+                try:
+                    result = kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
+                    if result not in {0x00000000, 0x00000080}:  # WAIT_OBJECT_0 / WAIT_ABANDONED
+                        raise JournalError("journal process lock could not be acquired")
+                    try:
+                        yield
+                    finally:
+                        kernel32.ReleaseMutex(handle)
+                finally:
+                    kernel32.CloseHandle(handle)
+                return
+            try:
+                import fcntl
+                with open(self.path + ".lock", "a+b") as lock_file:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                    try:
+                        yield
+                    finally:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except (ImportError, OSError) as error:
+                raise JournalError("journal process lock could not be acquired") from error
+
     def append(self, entry: JournalEntry) -> None:
-        self._check_path()
-        entries = self.read_entries()
-        if any(existing.entry_id == entry.entry_id for existing in entries):
-            raise JournalError("journal entry id already exists")
-        expected_sequence = len(entries) + 1
-        expected_previous = entries[-1].record_hash if entries else _GENESIS_PREVIOUS_HASH
-        if entry.sequence != expected_sequence or entry.previous_record_hash != expected_previous:
-            raise JournalError("journal sequence chain is invalid")
-        if entry.record_hash != _entry_hash(entry):
-            raise JournalError("journal entry integrity hash is invalid")
-        try:
-            with open(self.path, "a", encoding="utf-8", newline="\n") as stream:
-                stream.write(_canonical_json(_entry_payload(entry)) + "\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-        except OSError as error:
-            raise JournalError("journal append failed") from error
+        with self._append_lock():
+            self._check_path()
+            entries = self.read_entries()
+            if any(existing.entry_id == entry.entry_id for existing in entries):
+                raise JournalError("journal entry id already exists")
+            expected_sequence = len(entries) + 1
+            expected_previous = entries[-1].record_hash if entries else _GENESIS_PREVIOUS_HASH
+            if entry.sequence != expected_sequence or entry.previous_record_hash != expected_previous:
+                raise JournalError("journal sequence chain is invalid")
+            if entry.record_hash != _entry_hash(entry):
+                raise JournalError("journal entry integrity hash is invalid")
+            try:
+                with open(self.path, "a", encoding="utf-8", newline="\n") as stream:
+                    stream.write(_canonical_json(_entry_payload(entry)) + "\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except OSError as error:
+                raise JournalError("journal append failed") from error
 
 
 def create_audit_journal(root: MutationRoot, relative_path: str = ".dwi-journal.jsonl") -> AuditJournal:
@@ -1020,10 +1061,23 @@ def inspect_quarantine_inventory(
         elif current.status in _QUARANTINE_TRANSITION_STATES:
             if current_path is None:
                 failures.append(f"{recovery_id}: transition lifecycle has no payload reference")
+        elif current.status is QuarantineState.FAILED:
+            # A known failure after a quarantined payload (for example an
+            # occupied restore destination) still accounts for that payload.
+            # It remains recoverable, but an absent or changed payload fails
+            # closed rather than becoming an unknown quarantine entry.
+            if current_path is None:
+                failures.append(f"{recovery_id}: failed lifecycle has no payload reference")
+            else:
+                name_key = os.path.basename(current_path).casefold()
+                prior = expected.get(name_key)
+                if prior is not None and prior[0].casefold() != current_path.casefold():
+                    failures.append(f"{recovery_id}: quarantine payload path collides with another recovery")
+                else:
+                    expected[name_key] = (current_path, current.filesystem_identity, current)
         elif current.status in {
             QuarantineState.AUTHORIZATION_CLAIMED,
             QuarantineState.PLANNED,
-            QuarantineState.FAILED,
             QuarantineState.RESTORED,
             QuarantineState.RESTORE_COMMITTED_UNJOURNALED,
         }:
@@ -1694,6 +1748,13 @@ def restore_recovery(
     if phase_callback is not None:
         phase_callback("reconciling")
     reconciliation = reconcile_pending_operations(journal, disposable_root, quarantine_root, clock=clock)
+    if reconciliation.failures:
+        return RestoreResult(
+            recovery_id,
+            QuarantineState.RECONCILIATION_REQUIRED,
+            next((entry for entry in reversed(reconciliation.entries) if entry.recovery_id == recovery_id), None),
+            "reconciliation required before restore: " + "; ".join(reconciliation.failures),
+        )
     entries = tuple(entry for entry in reconciliation.entries if entry.recovery_id == recovery_id)
     if not entries:
         return RestoreResult(recovery_id, QuarantineState.FAILED, None, "recovery entry was not found")
@@ -1753,7 +1814,7 @@ def restore_recovery(
             authorization_identity=quarantined.authorization_identity,
             original_path=original,
             quarantine_path=destination,
-            filesystem_identity=identity,
+            filesystem_identity=quarantined.filesystem_identity,
             status=QuarantineState.RESTORING,
             recovery_id=recovery_id,
             timestamp=clock(),
@@ -1771,7 +1832,7 @@ def restore_recovery(
             authorization_identity=quarantined.authorization_identity,
             original_path=original,
             quarantine_path=destination,
-            filesystem_identity=identity,
+            filesystem_identity=quarantined.filesystem_identity,
             status=QuarantineState.RESTORED,
             recovery_id=recovery_id,
             timestamp=clock(),
