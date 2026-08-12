@@ -136,7 +136,7 @@ class DesktopTests(unittest.TestCase):
         vietnamese = Translator("vi")
         self.assertEqual(english("nav.findings"), "Findings")
         self.assertEqual(vietnamese("nav.findings"), "Phát hiện")
-        self.assertNotIn("{version}", vietnamese("app.version", version="1.0.0rc1"))
+        self.assertNotIn("{version}", vietnamese("app.version", version="1.0.0"))
         self.assertEqual(RiskLabel.SAFE.value, "safe")
         self.assertEqual(ActionEligibility.ELIGIBLE_FOR_EXPLICIT_ACTION.value, "eligible_for_explicit_action")
 

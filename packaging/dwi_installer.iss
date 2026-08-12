@@ -1,11 +1,11 @@
 #ifndef DWI_VERSION
-#define DWI_VERSION "1.0.0rc1"
+#define DWI_VERSION "1.0.0"
 #endif
 #ifndef DWI_FILE_VERSION
-#define DWI_FILE_VERSION "1.0.0.1"
+#define DWI_FILE_VERSION "1.0.0.0"
 #endif
 #ifndef DWI_EXE
-#define DWI_EXE "DWI-1.0.0rc1-Desktop.exe"
+#define DWI_EXE "DWI-1.0.0-Desktop.exe"
 #endif
 
 [Setup]

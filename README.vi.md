@@ -5,8 +5,7 @@ DWI là hệ thống intelligence cho lưu trữ của developer và cleanup an 
 sau từng finding, và cung cấp workflow Quarantine + Journal + Undo có thể khôi
 phục thông qua một deterministic engine dùng chung.
 
-> Đây là release candidate `1.0.0rc1`, chưa phải public release cuối cùng
-> `1.0.0`. Việc phát hành chính thức cần một vòng audit độc lập riêng.
+> Đây là bản phát hành chính thức `1.0.0` của DWI.
 
 [Read the English README](README.md)
 
@@ -26,12 +25,12 @@ Safety engine, không phải AI model, quyết định `RiskLabel`,
 `ActionEligibility`, validation và authorization. AI có thể giải thích hoặc
 request một quyết định từ engine, nhưng không được tự tạo safety decision.
 
-## Cài đặt release candidate
+## Cài đặt phiên bản 1.0.0
 
 Wheel đã được kiểm tra với Python 3.11+ trên Windows:
 
 ```powershell
-python -m pip install dwi-1.0.0rc1-py3-none-any.whl
+python -m pip install dwi-1.0.0-py3-none-any.whl
 ```
 
 Wheel không có runtime dependency ngoài Python. Có thể dùng source distribution

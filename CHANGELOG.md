@@ -1,6 +1,15 @@
 # Changelog
 
+## 1.0.0 — Stable release
+
+First stable release of Developer Workspace Intelligence (DWI).
+
+- Finalized deterministic safety policy, evidence interpretation, and fail-closed quarantine engine.
+- Verified single-source versioning (`1.0.0`), zero-dependency wheel, sdist, standalone Desktop EXE, and portable ZIP.
+- Passed 288/288 unit and integration tests across Desktop, CLI, MCP, and Mutation subsystems.
+
 ## 1.0.0rc1 — Release candidate
+
 
 This release candidate prepares the deterministic DWI engine and its human and
 agent interfaces for an independent public-release audit.

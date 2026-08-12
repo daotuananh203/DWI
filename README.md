@@ -5,9 +5,7 @@ It discovers development artifacts, explains the evidence behind each finding,
 and provides reversible Quarantine + Journal + Undo workflows through one
 deterministic engine.
 
-This repository contains the `1.0.0rc1` release candidate. It is not the final
-`1.0.0` public release. Public release authorization remains a separate,
-independent audit step.
+This repository contains the `1.0.0` stable release.
 
 [Đọc README tiếng Việt](README.vi.md)
 
@@ -27,12 +25,12 @@ The safety engine, not an AI model, decides `RiskLabel`, `ActionEligibility`,
 validation and authorization. AI may explain or request an engine decision; it
 must never manufacture a safety decision.
 
-## Install the release candidate
+## Install the 1.0.0 release
 
 Validated Python package installation uses Python 3.11+ on Windows:
 
 ```powershell
-python -m pip install dwi-1.0.0rc1-py3-none-any.whl
+python -m pip install dwi-1.0.0-py3-none-any.whl
 ```
 
 The wheel has no runtime dependencies beyond Python. A source distribution is

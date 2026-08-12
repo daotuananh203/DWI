@@ -143,7 +143,7 @@ class V1ResourceAndPolicyTests(unittest.TestCase):
             page_items(tuple(range(3)), key="changed", limit=1, cursor=first.next_cursor, maximum=10)
 
     def test_version_is_single_source_across_desktop_cli_mcp_and_metadata(self) -> None:
-        self.assertEqual(__version__, "1.0.0rc1")
+        self.assertEqual(__version__, "1.0.0")
         self.assertEqual(DESKTOP_VERSION, __version__)
         mcp = McpServer(McpService()).handle_message({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
         assert mcp is not None
