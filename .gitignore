@@ -23,6 +23,7 @@ dist/
 
 # Local tooling and editor state
 .idea/
+.agents/
 .vscode/
 *.swp
 *.swo
